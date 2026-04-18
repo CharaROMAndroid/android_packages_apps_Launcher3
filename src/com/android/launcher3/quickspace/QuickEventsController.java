@@ -133,21 +133,27 @@ public class QuickEventsController {
 
         if (hourOfDay >= 5 && hourOfDay <= 9) {
             mGreetings = mResources.getString(R.string.quickspace_grt_morning);
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_morning);
             mClockExt = mResources.getString(R.string.quickspace_ext_one);
         } else if (hourOfDay >= 12 && hourOfDay <= 15) {
             mGreetings = mResources.getString(R.string.quickspace_grt_afternoon);
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_afternoon)
             mClockExt = mResources.getString(R.string.quickspace_ext_two);
         } else if (hourOfDay >= 16 && hourOfDay <= 20) {
             mGreetings = mResources.getString(R.string.quickspace_grt_evening);
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_evening);
             mClockExt = mResources.getString(R.string.quickspace_ext_two);
         } else if (hourOfDay >= 21 && hourOfDay <= 23) {
             mGreetings = mResources.getString(R.string.quickspace_grt_night);
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_midnight);
             mClockExt = mResources.getString(R.string.quickspace_ext_two);
         } else if (hourOfDay >= 0 && hourOfDay <= 3) {
             mGreetings = mResources.getString(R.string.quickspace_grt_night);
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_midnight);
             mClockExt = mResources.getString(R.string.quickspace_ext_two);
         } else {
             mGreetings = mResources.getString(R.string.quickspace_grt_general);
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_general)
             mClockExt = mResources.getString(R.string.quickspace_ext_two);
         }
 
@@ -165,7 +171,7 @@ public class QuickEventsController {
         } else if (luckNumber == 7) {
             mPSAStr = mResources.getStringArray(R.array.quickspace_psa_random);
             mEventTitleSub = mPSAStr[getLuckyNumber(0, mPSAStr.length - 1)];
-            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_crdroid);
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_chocolate);
             mIsQuickEvent = true;
             return;
         }
