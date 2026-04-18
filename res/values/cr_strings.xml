@@ -382,6 +382,8 @@
         <item>NOOT NOOT!</item>
         <item>By the way, I use CharaROM</item>
         <item>sqrt(your_phone)</item>
+        <item>Now accepting donations for Chara Fumos</item>
+        <item>Oh hey, look, no more Eye!</item>
     </string-array>
     <string name="intent_no_app_clock_found">Unable to find calendar or clock activity</string>
 
