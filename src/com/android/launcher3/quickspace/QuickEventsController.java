@@ -137,7 +137,7 @@ public class QuickEventsController {
             mClockExt = mResources.getString(R.string.quickspace_ext_one);
         } else if (hourOfDay >= 12 && hourOfDay <= 15) {
             mGreetings = mResources.getString(R.string.quickspace_grt_afternoon);
-            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_afternoon)
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_afternoon);
             mClockExt = mResources.getString(R.string.quickspace_ext_two);
         } else if (hourOfDay >= 16 && hourOfDay <= 20) {
             mGreetings = mResources.getString(R.string.quickspace_grt_evening);
@@ -153,7 +153,7 @@ public class QuickEventsController {
             mClockExt = mResources.getString(R.string.quickspace_ext_two);
         } else {
             mGreetings = mResources.getString(R.string.quickspace_grt_general);
-            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_general)
+            mEventSubIcon = ContextCompat.getDrawable(mContext, R.drawable.ic_quickspace_general);
             mClockExt = mResources.getString(R.string.quickspace_ext_two);
         }
 
