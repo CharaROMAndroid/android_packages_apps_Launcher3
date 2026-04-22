@@ -384,6 +384,7 @@
         <item>sqrt(your_phone)</item>
         <item>Now accepting donations for Chara Fumos</item>
         <item>Oh hey, look, no more Eye!</item>
+        <item>Did I seriously just spend 2.5 hours writing an email?</item>
     </string-array>
     <string name="intent_no_app_clock_found">Unable to find calendar or clock activity</string>
 
