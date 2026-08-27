@@ -29,10 +29,10 @@
 
     <!-- AllApps & Launcher transitions -->
     <!-- The duration of the PagedView page snap animation -->
-    <integer name="config_pageSnapAnimationDuration">750</integer>
+    <integer name="config_pageSnapAnimationDuration">400</integer>
 
     <!-- The duration of the PagedView page snap animation -->
-    <integer name="config_keyboardTaskFocusSnapAnimationDuration">750</integer>
+    <integer name="config_keyboardTaskFocusSnapAnimationDuration">400</integer>
 
     <!-- View tag key used to determine if we should fade in the child views.. -->
     <string name="popup_container_iterate_children" translatable="false">popup_container_iterate_children</string>
@@ -48,7 +48,7 @@
     <!-- Parameters controlling the animation for when an item is dropped on the home screen,
          and it animates from its old position to the new one. -->
     <integer name="config_dropAnimMinDuration">100</integer>
-    <integer name="config_dropAnimMaxDuration">500</integer>
+    <integer name="config_dropAnimMaxDuration">300</integer>
 
     <!-- The duration of the UserFolder opening and closing animation -->
     <integer name="config_materialFolderExpandDuration">200</integer>
@@ -142,8 +142,8 @@
     <integer name="config_bottomSheetCloseDuration">267</integer>
 
     <!-- The duration of the AllApps opening and closing animation -->
-    <integer name="config_allAppsOpenDuration">600</integer>
-    <integer name="config_allAppsCloseDuration">300</integer>
+    <integer name="config_allAppsOpenDuration">350</integer>
+    <integer name="config_allAppsCloseDuration">200</integer>
 
     <!-- The max scale for the wallpaper when it's zoomed in -->
     <item name="config_wallpaperMaxScale" format="float" type="dimen">0</item>
