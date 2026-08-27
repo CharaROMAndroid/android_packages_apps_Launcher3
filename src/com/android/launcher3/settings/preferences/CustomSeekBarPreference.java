@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 package com.android.launcher3.settings.preferences;
+import com.android.launcher3.BuildConfig;
 
 import android.content.Context;
 import android.content.res.TypedArray;
@@ -129,8 +130,9 @@ public class CustomSeekBarPreference extends SliderPreference {
                 if (gcd <= 0) gcd = 1;
                 setSliderIncrement(gcd);
             }
-        } catch (Throwable ignored) {
-            // keep safe defaults
+        } catch (Throwable t) {
+            // keep safe defaults - log in debug builds
+            if (BuildConfig.DEBUG) android.util.Log.d("CustomSeekBarPreference", "Using defaults", t);
         } finally {
             a.recycle();
         }
