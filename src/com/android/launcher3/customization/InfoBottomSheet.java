@@ -4,6 +4,7 @@ import android.app.ActivityOptions;
 import android.app.Fragment;
 import android.app.FragmentManager;
 import android.content.ComponentName;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -198,7 +199,7 @@ public class InfoBottomSheet extends WidgetsBottomSheet {
                     .toBundle();
             try {
                 mLauncher.startActivity(intent, opts);
-            } catch (Exception ignored) {
+            } catch (ActivityNotFoundException | SecurityException e) {
             }
             return false;
         }
