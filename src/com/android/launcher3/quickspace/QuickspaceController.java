@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 package com.android.launcher3.quickspace;
+import com.android.launcher3.BuildConfig;
 
 import static com.android.launcher3.util.Executors.MAIN_EXECUTOR;
 import static com.android.launcher3.util.Executors.UI_HELPER_EXECUTOR;
@@ -229,7 +230,9 @@ public class QuickspaceController implements OmniJawsClient.OmniJawsObserver,
                 mSeraphix.setOnDataUpdated(null);
                 mSeraphix.unbind();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            if (BuildConfig.DEBUG) android.util.Log.w("QuickspaceController", "Error unbinding Seraphix", t);
+        }
         mSeraphix = null;
         mSeraphixText = null;
         mSeraphixIcon = null;
