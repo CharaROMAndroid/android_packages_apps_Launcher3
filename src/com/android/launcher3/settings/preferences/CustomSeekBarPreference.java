@@ -132,7 +132,7 @@ public class CustomSeekBarPreference extends SliderPreference {
             }
         } catch (Throwable t) {
             // keep safe defaults - log in debug builds
-            if (BuildConfig.DEBUG) android.util.Log.d("CustomSeekBarPreference", "Using defaults", t);
+            android.util.Log.d("CustomSeekBarPreference", "Using defaults", t);
         } finally {
             a.recycle();
         }

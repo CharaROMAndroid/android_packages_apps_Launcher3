@@ -231,7 +231,7 @@ public class QuickspaceController implements OmniJawsClient.OmniJawsObserver,
                 mSeraphix.unbind();
             }
         } catch (Throwable t) {
-            if (BuildConfig.DEBUG) android.util.Log.w("QuickspaceController", "Error unbinding Seraphix", t);
+            android.util.Log.w("QuickspaceController", "Error unbinding Seraphix", t);
         }
         mSeraphix = null;
         mSeraphixText = null;
