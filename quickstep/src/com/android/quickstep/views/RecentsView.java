@@ -2146,8 +2146,10 @@ public abstract class RecentsView<
         // Fade out the actions view quickly (0.1 range)
         mActionsView.getFullscreenAlpha().updateValue(
                 mapToRange(fullscreenProgress, 0, 0.1f, 1f, 0f, LINEAR));
-        mMemInfoView.setAlpha(MemInfoView.ALPHA_FS_PROGRESS,
-                mapToRange(fullscreenProgress, 0, 0.1f, 1f, 0f, LINEAR));
+        if (mMemInfoView != null) {
+            mMemInfoView.setAlpha(MemInfoView.ALPHA_FS_PROGRESS,
+                    mapToRange(fullscreenProgress, 0, 0.1f, 1f, 0f, LINEAR));
+        }
     }
 
     private void updateTaskStackListenerState() {
