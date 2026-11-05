@@ -2198,8 +2198,10 @@ public abstract class RecentsView<
         updateCurveProperties();
         // Update the set of visible task's data
         loadVisibleTaskData();
-        setTaskModalness(0);
+        // Clear the global tint first: setTaskModalness() runs updatePageOffsets(), which can
+        // apply per-task style tint (iOS) that must survive the reset.
         setColorTint(0);
+        setTaskModalness(0);
     }
 
     public void setFullscreenProgress(float fullscreenProgress) {
@@ -4129,11 +4131,6 @@ public abstract class RecentsView<
         return isOverlapEnabled() && mEnableDrawingLiveTile;
     }
 
-    public boolean isStackRecentsStyleActive() {
-        return isOverlapEnabled() && (mRecentsStyle.equals("staple")
-                || mRecentsStyle.equals("ios")
-                || mRecentsStyle.equals("oxygen"));
-    }
 
     private float getStackStyleOverlapFactor() {
         if (!isOverlapEnabled() || mFullscreenProgress >= STACK_STYLE_FULLSCREEN_PROGRESS) {
@@ -4144,42 +4141,6 @@ public abstract class RecentsView<
         return FAST_OUT_SLOW_IN.getInterpolation(stackProgress);
     }
 
-    private float getStackStyleTranslation(float dist, float childSize, float overlapFactor) {
-        float absDist = Math.abs(dist);
-        if (mRecentsStyle.equals("staple")) {
-            float stapleDistance = childSize * 0.60f;
-            if (absDist <= stapleDistance) {
-                return 0f;
-            }
-            float excess = absDist - stapleDistance;
-            float squish = Math.min(excess, (float) (Math.log10(1 + excess) * 12f));
-            float pullBack = absDist - (stapleDistance + squish);
-            float translation = (dist > 0) ? -pullBack : pullBack;
-            return translation * overlapFactor;
-        }
-
-        if (mRecentsStyle.equals("ios")) {
-            float stapleDistance = childSize * 0.1f;
-            if (dist >= 0 || absDist <= stapleDistance) {
-                return 0f;
-            }
-            float excess = absDist - stapleDistance;
-            float squish = Math.min(excess, (float) (Math.log10(1 + excess) * 45f));
-            float pullBack = absDist - (stapleDistance + squish);
-            return pullBack * overlapFactor;
-        }
-
-        if (mRecentsStyle.equals("oxygen")) {
-            if (dist >= 0 || absDist <= 0f) {
-                return 0f;
-            }
-            float squish = Math.min(absDist, (float) (Math.sqrt(absDist) * 7.5f));
-            float pullBack = absDist - squish;
-            return pullBack * overlapFactor;
-        }
-
-        return 0f;
-    }
 
 
     /**
@@ -6029,6 +5990,8 @@ public abstract class RecentsView<
                     child.setScaleY(baseScale);
                 }
                 if (tv != null) {
+                    tv.getPrimaryTaskOffsetTranslationProperty().set(
+                            tv, tv.getBaseTaskOffsetTranslationX());
                     if (child.getTranslationZ() != 0f) child.setTranslationZ(0f);
                     if (child.getRotationY() != 0f) child.setRotationY(0f);
                     tv.setColorTint(0f, 0);
@@ -6088,7 +6051,8 @@ public abstract class RecentsView<
                 child.setScaleY(finalScale);
             }
         } else {
-            
+            // Back inside the uncompressed zone: drop any overlap translation set earlier.
+            tv.getPrimaryTaskOffsetTranslationProperty().set(tv, currentTrans);
             if (child.getTranslationZ() != 0f) child.setTranslationZ(0f);
             if (child.getScaleX() != baseScale) {
                 child.setScaleX(baseScale);
@@ -6133,6 +6097,7 @@ public abstract class RecentsView<
             }
         }
 
+        tv.getPrimaryTaskOffsetTranslationProperty().set(tv, currentTrans);
         if (child.getTranslationZ() != 0f) child.setTranslationZ(0f);
         tv.setColorTint(0f, 0);
         if (child.getScaleX() != baseScale) {
@@ -6175,7 +6140,8 @@ public abstract class RecentsView<
                 return;
             }
         }
-        
+
+        tv.getPrimaryTaskOffsetTranslationProperty().set(tv, currentTrans);
         if (child.getTranslationZ() != 0f) child.setTranslationZ(0f);
         if (child.getScaleX() != baseScale) {
             child.setScaleX(baseScale);
