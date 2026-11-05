@@ -72,6 +72,7 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
     private ComponentKey mKey;
     private Rect mSourceBounds = new Rect();
     private boolean mShowingPackChooser;
+    private final ChooserToken mChooserToken = new ChooserToken();
 
     public InfoBottomSheet(Context context, AttributeSet attrs) {
         this(context, attrs, 0);
@@ -92,10 +93,26 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
                 && itemInfo != null
                 && itemInfo.getTargetComponent() != null
                 && itemInfo.getComponentKey() != null
-                // PackageManager metadata and icon overrides here are for the launcher's own
-                // user; work/private profile items keep the system app info screen.
-                && itemInfo.user != null
-                && itemInfo.user.equals(Process.myUserHandle());
+                && isCurrentUser(itemInfo.user, Process.myUserHandle());
+    }
+
+    /**
+     * PackageManager metadata and icon overrides here are for the launcher's own user; work and
+     * private profile items keep the system app info screen.
+     */
+    static boolean isCurrentUser(@Nullable Object itemUser, Object currentUser) {
+        return itemUser != null && itemUser.equals(currentUser);
+    }
+
+    /**
+     * Pure routing decision, shared by {@link #tryShow} so it can be tested without a Launcher:
+     * the sheet opens only for current-user application items on Launcher outside recents.
+     */
+    static boolean shouldRouteToSheet(boolean isLauncher, boolean canShow, int itemType,
+            boolean recentsVisible) {
+        return isLauncher && canShow
+                && itemType == LauncherSettings.Favorites.ITEM_TYPE_APPLICATION
+                && !recentsVisible;
     }
 
     /**
@@ -104,14 +121,13 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
      * use the system screen, so the sheet never races a Quickstep transition.
      */
     public static boolean tryShow(Object target, @Nullable ItemInfo itemInfo, View view) {
-        if (!(target instanceof Launcher) || !canShowFor(target, itemInfo)
-                || itemInfo.itemType != LauncherSettings.Favorites.ITEM_TYPE_APPLICATION) {
+        boolean isLauncher = target instanceof Launcher;
+        if (!isLauncher || !shouldRouteToSheet(true, canShowFor(target, itemInfo),
+                itemInfo == null ? -1 : itemInfo.itemType,
+                ((Launcher) target).getStateManager().getState().isRecentsViewVisible)) {
             return false;
         }
         Launcher launcher = (Launcher) target;
-        if (launcher.getStateManager().getState().isRecentsViewVisible) {
-            return false;
-        }
         try {
             // Close the long-press popup and any other floating view before the sheet opens.
             AbstractFloatingView.closeOpenViews(launcher, true,
@@ -266,6 +282,7 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
      */
     private void showPackChooser() {
         mShowingPackChooser = true;
+        final int generation = mChooserToken.next();
         final Context context = getContext();
         final IconPackManager ipm = IconPackManager.get(context);
         final Map<String, CharSequence> all = ipm.getProviderNames();
@@ -286,7 +303,9 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
             packs.sort((x, y) -> x.getValue().toString().toLowerCase(Locale.ROOT)
                     .compareTo(y.getValue().toString().toLowerCase(Locale.ROOT)));
             MAIN_EXECUTOR.execute(() -> {
-                if (!isAttachedToWindow() || !mShowingPackChooser) {
+                // A back then reopen, or a close, makes this list stale.
+                if (!isAttachedToWindow() || !mShowingPackChooser
+                        || !mChooserToken.isCurrent(generation)) {
                     return;
                 }
                 renderPackChooser(packs, selected);
@@ -314,6 +333,7 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
 
     private void showMetadata() {
         mShowingPackChooser = false;
+        mChooserToken.next();
         mPackList.setVisibility(GONE);
         mTitle.setOnClickListener(null);
         mTitle.setClickable(false);
@@ -349,15 +369,22 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
         mPackList.addView(row);
     }
 
-    /** Mirrors the A16 chooser: choosing the global pack clears the per-app override. */
-    private void applyPack(String value) {
-        Context context = getContext();
+    /**
+     * Mirrors the A16 chooser: choosing the global pack clears the per-app override, which also
+     * drops any explicit per-icon choice, other values replace it. Returns true when cleared.
+     */
+    static boolean applyPackChoice(Context context, ComponentKey key, String value) {
         if (value.equals(IconDatabase.getGlobal(context))) {
-            IconDatabase.resetForComponent(context, mKey);
-        } else {
-            IconDatabase.setForComponent(context, mKey, value);
+            IconDatabase.resetForComponent(context, key);
+            return true;
         }
-        AppReloader.get(context).reload(mKey);
+        IconDatabase.setForComponent(context, key, value);
+        return false;
+    }
+
+    private void applyPack(String value) {
+        applyPackChoice(getContext(), mKey, value);
+        AppReloader.get(getContext()).reload(mKey);
         close(true);
     }
 
@@ -402,6 +429,7 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
     @Override
     protected void handleClose(boolean animate) {
         mShowingPackChooser = false;
+        mChooserToken.next();
         handleClose(animate, DEFAULT_CLOSE_DURATION);
     }
 
@@ -413,5 +441,18 @@ public class InfoBottomSheet extends AbstractSlideInView<BaseActivity> {
     @Override
     protected Pair<View, String> getAccessibilityTarget() {
         return Pair.create(mTitle, getContext().getString(R.string.app_info_title));
+    }
+
+    /** Generation counter that invalidates in-flight pack list loads. */
+    static final class ChooserToken {
+        private int mGeneration;
+
+        int next() {
+            return ++mGeneration;
+        }
+
+        boolean isCurrent(int generation) {
+            return generation == mGeneration;
+        }
     }
 }

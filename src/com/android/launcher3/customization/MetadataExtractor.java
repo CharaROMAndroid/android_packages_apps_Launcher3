@@ -39,7 +39,8 @@ public class MetadataExtractor {
                         .setPackage(mSourcePkg)
                         .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             }
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | SecurityException e) {
+            // Unknown package or hidden by package visibility: no installer info.
         }
 
         try {
@@ -47,7 +48,8 @@ public class MetadataExtractor {
             mLastUpdate = pi.lastUpdateTime;
             mVersionName = pi.versionName != null ? pi.versionName : mVersionName;
             mVersionCode = pi.getLongVersionCode();
-        } catch (PackageManager.NameNotFoundException e) {
+        } catch (PackageManager.NameNotFoundException | SecurityException e) {
+            // Uninstalled mid-load or not visible: keep defaults.
         }
     }
 
@@ -58,12 +60,15 @@ public class MetadataExtractor {
         try {
             ApplicationInfo pi = mPm.getApplicationInfo(mSourcePkg, 0);
             return pi.loadLabel(mPm);
-        } catch (PackageManager.NameNotFoundException e) {
+        } catch (PackageManager.NameNotFoundException | SecurityException e) {
         }
         return mSourcePkg;
     }
 
     public String getLastUpdate() {
+        if (mLastUpdate <= 0) {
+            return "";
+        }
         return DateUtils.formatDateTime(mContext, mLastUpdate,
                 DateUtils.FORMAT_SHOW_WEEKDAY | DateUtils.FORMAT_SHOW_DATE);
     }
