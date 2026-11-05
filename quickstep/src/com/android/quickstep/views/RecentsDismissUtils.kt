@@ -560,7 +560,7 @@ constructor(
             if (reflowSplitFromDesktopTile) null else createGridEndTranslationSpringSet(gridEndData)
         val tasksWithOffsetsToReflow =
             if (recentsView.isOverlapEnabled && dismissedTaskView != null && !recentsView.showAsGrid()) {
-                getOverlapTasksToReflow(dismissedTaskView, dismissedTaskGap)
+                getOverlapTasksToReflow(dismissedTaskView)
             } else {
                 getTasksToReflow(dismissedTaskView, towardsStart)
             }
@@ -584,29 +584,15 @@ constructor(
             val reflowSpringSet = SpringSet(reflowSpringAnimationDriver, dismissedTaskGap)
             
             if (isOverlap) {
-                // Per-task targets let stack styles (Kami/iOS/Oxygen) land on their squished
-                // resting positions instead of the flat page-slot gap.
-                val reflowTargets =
-                    tasksWithOffsetsToReflow.associate { (tv, _) ->
-                        tv to recentsView.getStackDismissReflowTarget(tv, dismissedTaskGap)
-                    }
+                // Stack styles compress positions in RecentsView.doScrollScale() from each task's
+                // current dismiss translation, so the raw slot gap is the correct target here.
                 reflowSpringAnimationDriver.addUpdateListener { _, value, _ ->
                     tasksWithOffsetsToReflow.forEach { (tv, _) ->
-                        val taskValue =
-                            if (recentsView.isStackRecentsStyleActive) {
-                                getStackReflowSpringValue(
-                                    value,
-                                    dismissedTaskGap,
-                                    reflowTargets.getValue(tv),
-                                )
-                            } else {
-                                value
-                            }
-                        tv.primaryDismissTranslationProperty.set(tv, taskValue)
+                        tv.primaryDismissTranslationProperty.set(tv, value)
                         if (tv.isRunningTask && recentsView.enableDrawingLiveTile) {
                             recentsView.runActionOnRemoteHandles { remoteTargetHandle ->
                                 remoteTargetHandle.taskViewSimulator.taskPrimaryTranslation.value =
-                                    taskValue
+                                    value
                             }
                             recentsView.redrawLiveTile()
                         }
@@ -614,8 +600,7 @@ constructor(
                     recentsView.doScrollScale()
                 }
                 tasksWithOffsetsToReflow.forEach { (tv, _) ->
-                    recentsView.mTaskViewsDismissPrimaryTranslations[tv] =
-                        reflowTargets.getValue(tv).toInt()
+                    recentsView.mTaskViewsDismissPrimaryTranslations[tv] = dismissedTaskGap.toInt()
                 }
             } else {
                 buildDismissReflowSpringAnimationChain(
@@ -674,7 +659,8 @@ constructor(
                     
                     val physicalSlotWidth = pagedOrientationHandler.getPrimarySize(dismissedTaskView) + pageSpacing
                     val sign = if (reflowFromLeft) 1f else -1f
-                    physicalSlotWidth.toFloat() * sign * (if (isRtl) -1f else 1f)
+                    // Positions are physical (x/y), so the sign needs no RTL flip.
+                    physicalSlotWidth.toFloat() * sign
                 } else {
                     // If current page beyond last TaskView's index, use last TaskView to calculate
                     // offset.
@@ -697,8 +683,7 @@ constructor(
     }
 
     private fun getOverlapTasksToReflow(
-        dismissedTaskView: TaskView,
-        dismissedTaskGap: Float,
+        dismissedTaskView: TaskView
     ): List<Pair<TaskView, Int>> {
         with(recentsView) {
             val dismissedPos =
@@ -816,8 +801,6 @@ constructor(
         if (taskViewOffsetPairs.isEmpty()) return previousSpring
         var lastTaskViewSpring = previousSpring
         var previousColumnDriverSpring = previousSpring
-        var previousColumnDriverTarget = dismissedTaskGap
-        var lastTaskViewTarget = dismissedTaskGap
         var lastColumnOffset = taskViewOffsetPairs.first().second
         taskViewOffsetPairs
             .filter { (taskView, _) ->
@@ -835,8 +818,6 @@ constructor(
                             (if (recentsView.isRtl) -recentsView.mLastComputedTaskSize.right
                             else recentsView.mLastComputedTaskSize.right)
                     } else 0f
-                val taskReflowTarget =
-                    recentsView.getStackDismissReflowTarget(taskView, dismissedTaskGap)
                 val taskViewSpringAnimation =
                     SpringAnimation(
                             taskView,
@@ -844,7 +825,7 @@ constructor(
                                 taskView.primaryDismissTranslationProperty
                             ),
                         )
-                        .setSpring(createExpressiveGridReflowSpringForce(taskReflowTarget))
+                        .setSpring(createExpressiveGridReflowSpringForce(dismissedTaskGap))
                         .setStartValue(startValue)
                 // Update live tile on spring animation.
                 if (taskView.isRunningTask && recentsView.enableDrawingLiveTile) {
@@ -860,41 +841,17 @@ constructor(
                 // should both be pulled by the previous spring at the same time.
                 if (column != lastColumnOffset) {
                     previousColumnDriverSpring = lastTaskViewSpring
-                    previousColumnDriverTarget = lastTaskViewTarget
                     lastColumnOffset = column
                 }
-                val driverSpringForTask = previousColumnDriverSpring
-                val driverTargetForTask = previousColumnDriverTarget
-                if (recentsView.isStackRecentsStyleActive) {
-                    driverSpringForTask.addUpdateListener { _, value, _ ->
-                        taskViewSpringAnimation.animateToFinalPosition(
-                            getStackReflowSpringValue(value, driverTargetForTask, taskReflowTarget)
-                        )
-                    }
-                } else {
-                    driverSpringForTask.addUpdateListener { _, value, _ ->
-                        taskViewSpringAnimation.animateToFinalPosition(value)
-                    }
+                previousColumnDriverSpring.addUpdateListener { _, value, _ ->
+                    taskViewSpringAnimation.animateToFinalPosition(value)
                 }
                 lastTaskViewSpring = taskViewSpringAnimation
-                lastTaskViewTarget = taskReflowTarget
-                reflowSpringSet.trackSpring(taskViewSpringAnimation, taskReflowTarget)
+                reflowSpringSet.trackSpring(taskViewSpringAnimation, dismissedTaskGap)
                 recentsView.mTaskViewsDismissPrimaryTranslations[taskView] =
-                    taskReflowTarget.toInt()
+                    dismissedTaskGap.toInt()
             }
         return lastTaskViewSpring
-    }
-
-    private fun getStackReflowSpringValue(
-        value: Float,
-        driverTarget: Float,
-        taskReflowTarget: Float,
-    ): Float {
-        return if (driverTarget == 0f) {
-            taskReflowTarget
-        } else {
-            value / driverTarget * taskReflowTarget
-        }
     }
 
     /** Animates non-reflowing tasks when splitting while current page is a desktop tile. */
@@ -1433,11 +1390,7 @@ constructor(
         val resourceProvider = DynamicResource.provider(recentsView.mContainer)
         return SpringForce(finalPosition)
             .setDampingRatio(
-                if (recentsView.isStackRecentsStyleActive) {
-                    STACK_STYLE_REFLOW_DAMPING_RATIO
-                } else {
-                    resourceProvider.getFloat(R.dimen.expressive_dismiss_task_trans_x_damping_ratio)
-                }
+                resourceProvider.getFloat(R.dimen.expressive_dismiss_task_trans_x_damping_ratio)
             )
             .setStiffness(
                 resourceProvider.getFloat(R.dimen.expressive_dismiss_task_trans_x_stiffness)
@@ -1646,7 +1599,6 @@ constructor(
     private companion object {
         // The additional damping to apply to tasks further from the dismissed task.
         private const val ADDITIONAL_DISMISS_DAMPING_RATIO = 0.15f
-        private const val STACK_STYLE_REFLOW_DAMPING_RATIO = 1f
         private const val RECENTS_SCALE_SPRING_MULTIPLIER = 1000f
         private const val DEFAULT_DISMISS_THRESHOLD_FRACTION = 0.5f
         private const val SPEED_UP_STIFFNESS = 100_000f

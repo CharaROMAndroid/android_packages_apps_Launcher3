@@ -420,7 +420,7 @@ public abstract class RecentsView<
 
     private boolean isPerTaskScrollScaleActive() {
         TaskView running = getRunningTaskView();
-        return running != null && Math.abs(running.getScaleX() - 1f) > 1e-3f;
+        return isOverlapEnabled() && running != null && Math.abs(running.getScaleX() - 1f) > 1e-3f;
     }
 
     /** Same as normal SCALE_PROPERTY, but also updates page offsets that depend on this scale. */
@@ -594,7 +594,14 @@ public abstract class RecentsView<
     private boolean mBorderEnabled = false;
     private boolean mShowAsGridLastOnLayout = false;
     private boolean mEnableOverlap = false;
-    public boolean isOverlapEnabled() { return mEnableOverlap; }
+    /**
+     * Whether a custom recents style is selected and applies to the current layout. Styles only
+     * apply to the phone carousel, never to tablets or the grid.
+     */
+    public boolean isOverlapEnabled() {
+        return mEnableOverlap && !showAsGrid()
+                && !mContainer.getDeviceProfile().getDeviceProperties().isTablet();
+    }
     protected final IntSet mTopRowIdSet = new IntSet();
     private int mClearAllShortTotalWidthTranslation = 0;
 
@@ -731,8 +738,9 @@ public abstract class RecentsView<
 
     @ViewDebug.ExportedProperty(category = "launcher")
     protected float mContentAlpha = 1;
-    @ViewDebug.ExportedProperty(category = "launcher")
     private static final float STACK_STYLE_FULLSCREEN_PROGRESS = 0.35f;
+
+    @ViewDebug.ExportedProperty(category = "launcher")
     protected float mFullscreenProgress = 0;
     /**
      * How modal is the current task to be displayed, 1 means the task is fully modal and no other
@@ -1136,7 +1144,19 @@ public abstract class RecentsView<
     private String mRecentsStyle = "default"; 
 
     public void updateOverlapState() {
-        mRecentsStyle = LauncherPrefs.RECENTS_STYLE.get(getContext());
+        String style = LauncherPrefs.RECENTS_STYLE.get(getContext());
+        switch (style) {
+            case "stock":
+            case "staple":
+            case "ios":
+            case "oxygen":
+                mRecentsStyle = style;
+                break;
+            default:
+                // "default" or an unknown/corrupt value: keep stock A17 behavior.
+                mRecentsStyle = "default";
+                break;
+        }
         mEnableOverlap = !mRecentsStyle.equals("default");
     }
 
@@ -2165,7 +2185,7 @@ public abstract class RecentsView<
             simulator.taskSecondaryTranslation.value = 0;
             simulator.fullScreenProgress.value = 0;
             TaskView running = getRunningTaskView();
-            simulator.recentsViewScale.value = (running != null && !showAsGrid())
+            simulator.recentsViewScale.value = (running != null && isOverlapEnabled())
                     ? getPagedOrientationHandler().getPrimaryValue(
                             running.getScaleX(), running.getScaleY())
                     : 1f;
@@ -2197,7 +2217,7 @@ public abstract class RecentsView<
                     mapToRange(fullscreenProgress, 0, 0.1f, 1f, 0f, LINEAR));
         }
 
-        if (mEnableOverlap) {
+        if (isOverlapEnabled()) {
             updatePageOffsets();
         }
     }
@@ -2380,8 +2400,9 @@ public abstract class RecentsView<
     }
 
     protected Rect getTaskBounds(TaskView taskView) {
-        getTaskBounds(taskView, mTempTaskBoundsRect);
-        return mTempTaskBoundsRect;
+        Rect outRect = new Rect();
+        getTaskBounds(taskView, outRect);
+        return outRect;
     }
 
     protected void getTaskBounds(TaskView taskView, Rect outRect) {
@@ -2873,7 +2894,7 @@ public abstract class RecentsView<
 
         mCurrentGestureEndTarget = null;
 
-        if (mEnableOverlap && mEnableDrawingLiveTile) {
+        if (isOverlapEnabled() && mEnableDrawingLiveTile) {
             switchToScreenshot(
                 () -> finishRecentsAnimation(true /* toRecents */, false /* shouldPip */,
                         null));
@@ -4081,7 +4102,7 @@ public abstract class RecentsView<
             } else if (child instanceof AddDesktopButton addDesktopButton) {
                 addDesktopButton.setOffsetTranslationX(totalTranslationX);
             }
-            if (mEnableDrawingLiveTile && i == getRunningTaskIndex() && !mEnableOverlap) {
+            if (mEnableDrawingLiveTile && i == getRunningTaskIndex() && !isOverlapEnabled()) {
                 runActionOnRemoteHandles(
                         remoteTargetHandle -> remoteTargetHandle.getTaskViewSimulator()
                                 .taskPrimaryTranslation.value = totalTranslationX);
@@ -4096,7 +4117,7 @@ public abstract class RecentsView<
             }
         }
         updateCurveProperties();
-        if (mEnableOverlap) {
+        if (isOverlapEnabled()) {
             doScrollScale();
             if (mEnableDrawingLiveTile && mRemoteTargetHandles != null) {
                 redrawLiveTile();
@@ -4105,51 +4126,17 @@ public abstract class RecentsView<
     }
 
     public boolean isOverlapStyleActive() {
-        return mEnableOverlap && mEnableDrawingLiveTile;
+        return isOverlapEnabled() && mEnableDrawingLiveTile;
     }
 
     public boolean isStackRecentsStyleActive() {
-        return !showAsGrid() && (mRecentsStyle.equals("staple")
+        return isOverlapEnabled() && (mRecentsStyle.equals("staple")
                 || mRecentsStyle.equals("ios")
                 || mRecentsStyle.equals("oxygen"));
     }
 
-    public float getStackDismissReflowTarget(TaskView taskView, float reflowTarget) {
-        if (!isStackRecentsStyleActive()) {
-            return reflowTarget;
-        }
-
-        float overlapFactor = getStackStyleOverlapFactor();
-        if (overlapFactor <= 0f) {
-            return reflowTarget;
-        }
-
-        boolean touchInLandscape = mOrientationState.getTouchRotation() != ROTATION_0
-                && mOrientationState.getTouchRotation() != ROTATION_180;
-        boolean layoutInLandscape = mOrientationState.getRecentsActivityRotation() != ROTATION_0
-                && mOrientationState.getRecentsActivityRotation() != ROTATION_180;
-        boolean canRotateRecents = mOrientationState.isRecentsActivityRotationAllowed();
-        boolean verticalScroll = !canRotateRecents && touchInLandscape && !layoutInLandscape;
-
-        int curScroll = verticalScroll ? getScrollY() : getScrollX();
-        int containerCenter = curScroll + (verticalScroll ? (getHeight() / 2) : (getWidth() / 2));
-        float childCenter = verticalScroll
-                ? (taskView.getTop() + (taskView.getHeight() / 2f))
-                : (taskView.getLeft() + (taskView.getWidth() / 2f));
-        float childSize = verticalScroll ? taskView.getHeight() : taskView.getWidth();
-        if (childSize == 0f) {
-            return reflowTarget;
-        }
-
-        float currentDist = childCenter - containerCenter;
-        float currentStackOffset = getStackStyleTranslation(currentDist, childSize, overlapFactor);
-        float targetStackOffset = getStackStyleTranslation(
-                currentDist + reflowTarget, childSize, overlapFactor);
-        return reflowTarget + targetStackOffset - currentStackOffset;
-    }
-
     private float getStackStyleOverlapFactor() {
-        if (!mEnableOverlap || mFullscreenProgress >= STACK_STYLE_FULLSCREEN_PROGRESS) {
+        if (!isOverlapEnabled() || mFullscreenProgress >= STACK_STYLE_FULLSCREEN_PROGRESS) {
             return 0f;
         }
         float stackProgress = Utilities.boundToRange(
@@ -5944,7 +5931,7 @@ public abstract class RecentsView<
     }
 
     public void doScrollScale() {
-        if (showAsGrid() || mContainer.getDeviceProfile().getDeviceProperties().isTablet()) return;
+        if (!isOverlapEnabled()) return;
         if (!isPageScrollsInitialized()) return;
 
         int childCount = Math.min(mPageScrolls.length, getChildCount());
@@ -6197,7 +6184,7 @@ public abstract class RecentsView<
     }
 
     public float getScrollScale(RemoteTargetHandle rth) {
-        if (rth == null || showAsGrid() || mContainer.getDeviceProfile().getDeviceProperties().isTablet()) return 1f;
+        if (rth == null || !isOverlapEnabled()) return 1f;
         if (!isPageScrollsInitialized()) return 1f;
         int childCount = Math.min(mPageScrolls.length, getChildCount());
         for (int i = 0; i < childCount; i++) {
