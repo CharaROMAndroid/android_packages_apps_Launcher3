@@ -368,8 +368,11 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
         mLatencyTracker = LatencyTracker.getInstance(launcher);
 
         mMaxBlurRadius = LauncherPrefs.BLUR_DEPTH.get(launcher);
+        // Snapshot the user setting with the device eligibility for this manager's lifetime.
+        // Do not re-read mid-animation: a created scrim must always take its cleanup path.
         mIsAppLaunchBlurEnabled = appLaunchBlur() && res.getBoolean(
-                com.android.internal.R.bool.config_enableAppLaunchBlur);
+                com.android.internal.R.bool.config_enableAppLaunchBlur)
+                && LauncherPrefs.APP_LAUNCH_BLUR_ENABLED.get(launcher);
     }
 
     @Override
