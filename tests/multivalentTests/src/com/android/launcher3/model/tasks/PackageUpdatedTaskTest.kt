@@ -57,6 +57,7 @@ import org.junit.runner.RunWith
 import org.mockito.Mock
 import org.mockito.junit.MockitoJUnit
 import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.spy
 import org.mockito.kotlin.verify
@@ -99,7 +100,7 @@ class PackageUpdatedTaskTest {
         context.initDaggerComponent(
             DaggerPackageUpdatedTaskTest_TestComponent.builder()
                 .bindAppsRepository(appsListRepo)
-                .bindAllAppsList(spy(AllAppsList(mockIconCache, mockAppFilter) { appsListRepo }))
+                .bindAllAppsList(spy(AllAppsList(mockIconCache, mockAppFilter, context) { appsListRepo }))
                 .bindAppFilter(mockAppFilter)
                 .bindIconCache(mockIconCache)
         )

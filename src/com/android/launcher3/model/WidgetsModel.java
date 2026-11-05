@@ -32,6 +32,7 @@ import com.android.launcher3.config.FeatureFlags;
 import com.android.launcher3.dagger.ApplicationContext;
 import com.android.launcher3.dragndrop.PinShortcutRequestActivityInfo;
 import com.android.launcher3.icons.IconCache;
+import com.android.launcher3.lineage.trust.HiddenAppsStore;
 import com.android.launcher3.icons.cache.CachedObject;
 import com.android.launcher3.model.data.PackageItemInfo;
 import com.android.launcher3.pm.ShortcutConfigActivityInfo;
@@ -243,7 +244,8 @@ public class WidgetsModel {
         }
 
         // Refresh the validity checker with latest app state.
-        mWidgetValidityCheckForPicker = new WidgetValidityCheckForPicker(mIdp, mAppFilter);
+        mWidgetValidityCheckForPicker = new WidgetValidityCheckForPicker(mIdp, mAppFilter,
+                HiddenAppsStore.get(mContext));
 
         // Temporary cache for {@link PackageItemInfos} to avoid having to go through
         // {@link mPackageItemInfos} to locate the key to be used for {@link #mWidgetsList}
@@ -336,10 +338,13 @@ public class WidgetsModel {
 
         private final InvariantDeviceProfile mIdp;
         private final AppFilter mAppFilter;
+        private final HiddenAppsStore mHiddenApps;
 
-        WidgetValidityCheckForPicker(InvariantDeviceProfile idp, AppFilter appFilter) {
+        WidgetValidityCheckForPicker(InvariantDeviceProfile idp, AppFilter appFilter,
+                HiddenAppsStore hiddenApps) {
             mIdp = idp;
             mAppFilter = appFilter;
+            mHiddenApps = hiddenApps;
         }
 
         @Override
@@ -360,7 +365,8 @@ public class WidgetsModel {
                     return false;
                 }
             }
-            if (!mAppFilter.shouldShowApp(item.componentName)) {
+            if (!mAppFilter.shouldShowApp(item.componentName)
+                    || mHiddenApps.isHidden(item.componentName.getPackageName(), item.user)) {
                 if (DEBUG) {
                     Log.d(TAG, String.format("%s is filtered and not added to the widget tray.",
                             item.componentName));

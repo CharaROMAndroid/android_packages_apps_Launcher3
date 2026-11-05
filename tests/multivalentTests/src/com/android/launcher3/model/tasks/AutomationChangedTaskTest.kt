@@ -122,7 +122,7 @@ class AutomationChangedTaskTest {
         context.initDaggerComponent(
             DaggerAutomationChangedTaskTest_TestComponent.builder()
                 .bindAppsRepository(appsListRepo)
-                .bindAllAppsList(spy(AllAppsList(iconCache, appFilter) { appsListRepo }))
+                .bindAllAppsList(spy(AllAppsList(iconCache, appFilter, context) { appsListRepo }))
                 .bindAppFilter(appFilter)
                 .bindIconCache(iconCache)
         )

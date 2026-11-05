@@ -40,6 +40,7 @@ import com.android.launcher3.icons.IconCache
 import com.android.launcher3.icons.IconChangeTracker
 import com.android.launcher3.icons.LauncherIcons.IconPool
 import com.android.launcher3.logging.FileLog
+import com.android.launcher3.lineage.trust.HiddenAppsStore
 import com.android.launcher3.model.tasks.AutomationChangedTask
 import com.android.launcher3.model.tasks.PackageUpdatedTask
 import com.android.launcher3.model.tasks.ShortcutsChangedTask
@@ -257,6 +258,7 @@ constructor(
             // User removed
             oldUser != null && newUser == null -> {
                 if (oldUser.iconInfo.isWork) prefs.put(LauncherPrefs.WORK_EDU_STEP, 0)
+                HiddenAppsStore.get(context).clearUser(oldUser.iconInfo.userSerial)
                 model.reloadIfActive("user-removed")
             }
 

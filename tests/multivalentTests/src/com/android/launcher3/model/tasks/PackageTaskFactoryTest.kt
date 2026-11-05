@@ -56,6 +56,7 @@ import org.junit.runner.RunWith
 import org.mockito.Mock
 import org.mockito.junit.MockitoJUnit
 import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.never
 import org.mockito.kotlin.spy
@@ -99,7 +100,7 @@ class PackageTaskFactoryTest {
         context.initDaggerComponent(
             DaggerPackageTaskFactoryTest_TestComponent.builder()
                 .bindAppsRepository(appsListRepo)
-                .bindAllAppsList(spy(AllAppsList(mockIconCache, mockAppFilter) { appsListRepo }))
+                .bindAllAppsList(spy(AllAppsList(mockIconCache, mockAppFilter, context) { appsListRepo }))
                 .bindAppFilter(mockAppFilter)
                 .bindIconCache(mockIconCache)
         )

@@ -551,4 +551,8 @@
     <string name="pref_app_launch_blur_title">App launch blur</string>
     <string name="pref_app_launch_blur_summary">Show blur effect when launching apps</string>
     <string name="allow_rotation_title">Allow home screen rotation</string>
+    <string name="trust_apps_profile_label" translatable="false">%1$s (%2$s)</string>
+    <string name="trust_apps_switch_hidden_desc">%1$s, hidden from launcher</string>
+    <string name="trust_apps_switch_visible_desc">%1$s, shown in launcher</string>
+    <string name="trust_apps_action_failed">Couldn\'t complete the action</string>
 </resources>
