@@ -26,7 +26,9 @@ import static android.view.View.MeasureSpec.makeMeasureSpec;
 import static com.android.app.animation.Interpolators.ACCELERATE_0_75;
 import static com.android.app.animation.Interpolators.ACCELERATE_DECELERATE;
 import static com.android.app.animation.Interpolators.DECELERATE_2;
+import static com.android.app.animation.Interpolators.EMPHASIZED;
 import static com.android.app.animation.Interpolators.EMPHASIZED_DECELERATE;
+import static com.android.app.animation.Interpolators.FAST_OUT_SLOW_IN;
 import static com.android.app.animation.Interpolators.LINEAR;
 import static com.android.app.animation.Interpolators.clampToProgress;
 import static com.android.internal.jank.Cuj.CUJ_LAUNCHER_RECENTS_TO_HOME;
@@ -729,6 +731,7 @@ public abstract class RecentsView<
     @ViewDebug.ExportedProperty(category = "launcher")
     protected float mContentAlpha = 1;
     @ViewDebug.ExportedProperty(category = "launcher")
+    private static final float STACK_STYLE_FULLSCREEN_PROGRESS = 0.35f;
     protected float mFullscreenProgress = 0;
     /**
      * How modal is the current task to be displayed, 1 means the task is fully modal and no other
@@ -3638,17 +3641,6 @@ public abstract class RecentsView<
                 int offset = getOffsetToDismissedTask(scrollDiffPerPage, dismissedIndex,
                         lastTaskViewIndex);
                 int scrollDiff = newScroll[i] - oldScroll[i] + offset;
-                if (scrollDiff != 0) {=
-                    if (!isExpressiveDismiss) {
-                        if (!mEnableOverlap) { 
-                            translateTaskWhenDismissed(
-                                    child,
-                                    Math.abs(i - dismissedIndex),
-                                    scrollDiff,
-                                    anim,
-                                    splitTimings);
-                        }
-                    }
                 if (scrollDiff != 0) {
                     int gapFillTranslation = getGapFillTranslationForDismiss(
                             i, dismissedIndex, scrollDiffPerPage, scrollDiff, offset);
@@ -4021,15 +4013,6 @@ public abstract class RecentsView<
     }
 
     /**
-     * Compute scroll offsets from task dismissal for animation.
-     * If we just take newScroll - oldScroll, everything to the right of dragged task
-     * translates to the left. We need to offset this in some cases:
-     * - In RTL, add page offset to all pages, since we want pages to move to the right
-     * Additionally, add a page offset if:
-     * - Current page is rightmost page (leftmost for RTL)
-     * - Dragging an adjacent page on the left side (right side for RTL)
-     */
-    /**
      * Target for {@link TaskView#getPrimaryDismissTranslationProperty()} while a task is
      * dismissed. Overlap styles (Kami/iOS/Oxygen) use page-slot spacing because page-scroll
      * deltas from {@link #getPageScrolls} do not match the stack's visual overlap offsets.
@@ -4051,6 +4034,15 @@ public abstract class RecentsView<
         return gapFillTranslation;
     }
 
+    /**
+     * Compute scroll offsets from task dismissal for animation.
+     * If we just take newScroll - oldScroll, everything to the right of dragged task
+     * translates to the left. We need to offset this in some cases:
+     * - In RTL, add page offset to all pages, since we want pages to move to the right
+     * Additionally, add a page offset if:
+     * - Current page is rightmost page (leftmost for RTL)
+     * - Dragging an adjacent page on the left side (right side for RTL)
+     */
     private int getOffsetToDismissedTask(int scrollDiffPerPage, int dismissedIndex,
             int lastTaskViewIndex) {
         // If `mCurrentPage` is beyond `lastTaskViewIndex`, use the last TaskView instead to
@@ -4102,6 +4094,10 @@ public abstract class RecentsView<
                 ? Utilities.boundToRange(splitTimings.getGridSlideStartOffset()
                 + splitTimings.getGridSlideDurationOffset(), 0f, 1f)
                 : 1f;
+
+        if (view instanceof TaskView taskView && isStackRecentsStyleActive()) {
+            scrollDiffPerPage = Math.round(getStackDismissReflowTarget(taskView, scrollDiffPerPage));
+        }
 
         // Slide tiles in horizontally to fill dismissed area
         pendingAnimation.setFloat(
@@ -4777,6 +4773,93 @@ public abstract class RecentsView<
     public boolean isOverlapStyleActive() {
         return mEnableOverlap && mEnableDrawingLiveTile;
     }
+
+    public boolean isStackRecentsStyleActive() {
+        return mRecentsStyle.equals("staple")
+                || mRecentsStyle.equals("ios")
+                || mRecentsStyle.equals("oxygen");
+    }
+
+    public float getStackDismissReflowTarget(TaskView taskView, float reflowTarget) {
+        if (!isStackRecentsStyleActive()) {
+            return reflowTarget;
+        }
+
+        float overlapFactor = getStackStyleOverlapFactor();
+        if (overlapFactor <= 0f) {
+            return reflowTarget;
+        }
+
+        boolean touchInLandscape = mOrientationState.getTouchRotation() != ROTATION_0
+                && mOrientationState.getTouchRotation() != ROTATION_180;
+        boolean layoutInLandscape = mOrientationState.getRecentsActivityRotation() != ROTATION_0
+                && mOrientationState.getRecentsActivityRotation() != ROTATION_180;
+        boolean canRotateRecents = mOrientationState.isRecentsActivityRotationAllowed();
+        boolean verticalScroll = !canRotateRecents && touchInLandscape && !layoutInLandscape;
+
+        int curScroll = verticalScroll ? getScrollY() : getScrollX();
+        int containerCenter = curScroll + (verticalScroll ? (getHeight() / 2) : (getWidth() / 2));
+        float childCenter = verticalScroll
+                ? (taskView.getTop() + (taskView.getHeight() / 2f))
+                : (taskView.getLeft() + (taskView.getWidth() / 2f));
+        float childSize = verticalScroll ? taskView.getHeight() : taskView.getWidth();
+        if (childSize == 0f) {
+            return reflowTarget;
+        }
+
+        float currentDist = childCenter - containerCenter;
+        float currentStackOffset = getStackStyleTranslation(currentDist, childSize, overlapFactor);
+        float targetStackOffset = getStackStyleTranslation(
+                currentDist + reflowTarget, childSize, overlapFactor);
+        return reflowTarget + targetStackOffset - currentStackOffset;
+    }
+
+    private float getStackStyleOverlapFactor() {
+        if (!mEnableOverlap || mFullscreenProgress >= STACK_STYLE_FULLSCREEN_PROGRESS) {
+            return 0f;
+        }
+        float stackProgress = Utilities.boundToRange(
+                1f - (mFullscreenProgress / STACK_STYLE_FULLSCREEN_PROGRESS), 0f, 1f);
+        return FAST_OUT_SLOW_IN.getInterpolation(stackProgress);
+    }
+
+    private float getStackStyleTranslation(float dist, float childSize, float overlapFactor) {
+        float absDist = Math.abs(dist);
+        if (mRecentsStyle.equals("staple")) {
+            float stapleDistance = childSize * 0.60f;
+            if (absDist <= stapleDistance) {
+                return 0f;
+            }
+            float excess = absDist - stapleDistance;
+            float squish = Math.min(excess, (float) (Math.log10(1 + excess) * 12f));
+            float pullBack = absDist - (stapleDistance + squish);
+            float translation = (dist > 0) ? -pullBack : pullBack;
+            return translation * overlapFactor;
+        }
+
+        if (mRecentsStyle.equals("ios")) {
+            float stapleDistance = childSize * 0.1f;
+            if (dist >= 0 || absDist <= stapleDistance) {
+                return 0f;
+            }
+            float excess = absDist - stapleDistance;
+            float squish = Math.min(excess, (float) (Math.log10(1 + excess) * 45f));
+            float pullBack = absDist - (stapleDistance + squish);
+            return pullBack * overlapFactor;
+        }
+
+        if (mRecentsStyle.equals("oxygen")) {
+            if (dist >= 0 || absDist <= 0f) {
+                return 0f;
+            }
+            float squish = Math.min(absDist, (float) (Math.sqrt(absDist) * 7.5f));
+            float pullBack = absDist - squish;
+            return pullBack * overlapFactor;
+        }
+
+        return 0f;
+    }
+
 
     /**
      * Computes the child position with persistent translation considered (see
@@ -6525,8 +6608,6 @@ public abstract class RecentsView<
         updatePageOffsets();
     }
 
-    private void doScrollScale() {
-        if (showAsGrid() || mContainer.getDeviceProfile().isTablet) return;
     public void doScrollScale() {
         if (showAsGrid() || mContainer.getDeviceProfile().getDeviceProperties().isTablet()) return;
         if (!isPageScrollsInitialized()) return;
@@ -6538,13 +6619,9 @@ public abstract class RecentsView<
         final boolean isIOS = mRecentsStyle.equals("ios");
         final boolean isOxygen = mRecentsStyle.equals("oxygen");
 
-        mScrollScale = isOxygen ? 0.92f : 0.85f;
+        float mScrollScale = isOxygen ? 0.92f : 0.85f;
 
-        float overlapFactor = 0f;
-        if (mEnableOverlap && mFullscreenProgress <= 0.01f) {
-             overlapFactor = Utilities.mapToRange(
-                mFullscreenProgress, 0f, 0.05f, 1f, 0f, LINEAR);
-        }
+        float overlapFactor = getStackStyleOverlapFactor();
         final boolean applyOverlap = (overlapFactor > 0);
 
         //nick@lmo-20231004 if rotating launcher is enabled, rotation works differently
@@ -6630,8 +6707,6 @@ public abstract class RecentsView<
                     child.setScaleY(baseScale);
                 }
                 if (tv != null) {
-                    FloatProperty<TaskView> offsetProp = tv.getPrimaryTaskOffsetTranslationProperty();
-                    if (offsetProp.get(tv) != 0f) offsetProp.set(tv, 0f);
                     if (child.getTranslationZ() != 0f) child.setTranslationZ(0f);
                     if (child.getRotationY() != 0f) child.setRotationY(0f);
                     tv.setColorTint(0f, 0);
@@ -6644,15 +6719,6 @@ public abstract class RecentsView<
                     tv.getTranslationX(), tv.getTranslationY());
             final int[] taskIds = tv.getTaskIds();
             for (RemoteTargetHandle rth : mRemoteTargetHandles) {
-                TransformParams params = rth.getTransformParams();
-                RemoteAnimationTargets targets = params.getTargetSet();
-                for (int id : taskView.getTaskIds()) {
-                    if (targets != null && targets.findTask(id) != null) {
-                        rth.getTaskViewSimulator().scrollScale.value =
-                                getPagedOrientationHandler().getPrimaryValue(
-                                        taskView.getScaleX(),
-                                        taskView.getScaleY()
-                                );
                 RemoteAnimationTargets targets = rth.getTransformParams().getTargetSet();
                 if (targets == null) continue;
                 for (int id : taskIds) {
@@ -6677,6 +6743,7 @@ public abstract class RecentsView<
         if (absDist > stapleDistance) {
             float excess = absDist - stapleDistance;
             float squish = (float) (Math.log10(1 + excess) * 12f);
+            squish = Math.min(excess, squish);
             float targetVisualDist = stapleDistance + squish;
             float pullBack = absDist - targetVisualDist;
             float translation = (dist > 0) ? -pullBack : pullBack;
@@ -6717,6 +6784,7 @@ public abstract class RecentsView<
             if (absDist > stapleDistance) {
                 float excess = absDist - stapleDistance;
                 float squish = (float) (Math.log10(1 + excess) * 45f);
+                squish = Math.min(excess, squish);
                 float targetVisualDist = stapleDistance + squish;
                 float pullBack = absDist - targetVisualDist;
                 
@@ -6761,6 +6829,7 @@ public abstract class RecentsView<
             if (absDist > stapleDistance) {
                 float excess = absDist - stapleDistance;
                 float squish = (float) (Math.sqrt(excess) * 7.5f);
+                squish = Math.min(excess, squish);
                 float targetVisualDist = stapleDistance + squish;
                 float pullBack = absDist - targetVisualDist;
 
