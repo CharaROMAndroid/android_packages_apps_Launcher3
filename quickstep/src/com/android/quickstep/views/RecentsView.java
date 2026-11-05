@@ -1141,7 +1141,7 @@ public abstract class RecentsView<
         return true;
     }
 
-    private String mRecentsStyle = "default"; 
+    private String mRecentsStyle = "default";
 
     public void updateOverlapState() {
         String style = LauncherPrefs.RECENTS_STYLE.get(getContext());
@@ -5941,9 +5941,9 @@ public abstract class RecentsView<
         for (int i = 0; i < childCount; i++) {
             View child = getChildAt(i);
 
-            int childSize = cachedChildSize > 0 ? cachedChildSize : 
+            int childSize = cachedChildSize > 0 ? cachedChildSize :
                            (verticalScroll ? child.getHeight() : child.getWidth());
-            
+
             if (childSize == 0) continue;
 
             int scaleArea = (cachedScaleArea > 0) ? cachedScaleArea : (childSize + mPageSpacing);
@@ -5959,7 +5959,7 @@ public abstract class RecentsView<
 
             if (applyOverlap && child instanceof TaskView) {
                 TaskView tv = (TaskView) child;
-                
+
                 float dismissTrans = tv.getPrimaryDismissTranslationProperty().get(tv);
                 float gridEndTrans = TaskView.GRID_END_TRANSLATION_X.get(tv);
                 float totalDismissTrans = dismissTrans + gridEndTrans;
@@ -6019,7 +6019,7 @@ public abstract class RecentsView<
     }
 
     // Helper
-    private void applyKamiStyle(TaskView tv, View child, float dist, float absDist, 
+    private void applyKamiStyle(TaskView tv, View child, float dist, float absDist,
                               float childSize, float baseScale, float overlapFactor) {
         float stapleDistance = childSize * 0.60f;
 
@@ -6032,7 +6032,7 @@ public abstract class RecentsView<
             float targetVisualDist = stapleDistance + squish;
             float pullBack = absDist - targetVisualDist;
             float translation = (dist > 0) ? -pullBack : pullBack;
-            
+
             float overlapTrans = translation * overlapFactor;
 
             tv.getPrimaryTaskOffsetTranslationProperty().set(tv, currentTrans + overlapTrans);
@@ -6061,7 +6061,7 @@ public abstract class RecentsView<
         }
     }
 
-    private void applyIOSStyle(TaskView tv, View child, float dist, float absDist, 
+    private void applyIOSStyle(TaskView tv, View child, float dist, float absDist,
                              float childSize, float baseScale, float overlapFactor) {
         float currentTrans = tv.getBaseTaskOffsetTranslationX();
 
@@ -6073,7 +6073,7 @@ public abstract class RecentsView<
                 squish = Math.min(excess, squish);
                 float targetVisualDist = stapleDistance + squish;
                 float pullBack = absDist - targetVisualDist;
-                
+
                 float overlapTrans = pullBack * overlapFactor;
 
                 tv.getPrimaryTaskOffsetTranslationProperty().set(tv, currentTrans + overlapTrans);
@@ -6088,7 +6088,7 @@ public abstract class RecentsView<
 
                 float stackScaleFactor = 1f - (depthProgress * 0.15f);
                 float finalScale = baseScale * (1f - (1f - stackScaleFactor) * overlapFactor);
-                
+
                 if (child.getScaleX() != finalScale) {
                     child.setScaleX(finalScale);
                     child.setScaleY(finalScale);
@@ -6106,9 +6106,9 @@ public abstract class RecentsView<
         }
     }
 
-    private void applyOxygenStyle(TaskView tv, View child, float dist, float absDist, 
+    private void applyOxygenStyle(TaskView tv, View child, float dist, float absDist,
                                 float childSize, float baseScale, float overlapFactor) {
-        
+
         float currentTrans = tv.getBaseTaskOffsetTranslationX();
 
         if (dist < 0) {

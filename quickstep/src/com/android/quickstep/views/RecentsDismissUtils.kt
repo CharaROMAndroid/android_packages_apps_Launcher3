@@ -578,11 +578,11 @@ constructor(
                             createExpressiveGridReflowSpringForce(finalPosition = dismissedTaskGap)
                         }
                     )
-            
+
             recentsView.mTaskViewsDismissPrimaryTranslations.clear()
             // Separate spring end manager for reflow to coordinate start of grid end springs.
             val reflowSpringSet = SpringSet(reflowSpringAnimationDriver, dismissedTaskGap)
-            
+
             if (isOverlap) {
                 // Stack styles compress positions in RecentsView.doScrollScale() from each task's
                 // current dismiss translation, so the raw slot gap is the correct target here.
@@ -611,7 +611,7 @@ constructor(
                     isSplitSelection,
                 )
             }
-            
+
             val tasksToExclude = tasksWithOffsetsToReflow.map { (taskView, _) -> taskView }
             if (gridEndSpringSet != null) {
                 reflowSpringSet.playAfterThreshold(
@@ -656,7 +656,7 @@ constructor(
                         } ?: dismissedPos
                     val reflowFromLeft =
                         dismissedTaskView === activeTaskView || dismissedPos <= activePos
-                    
+
                     val physicalSlotWidth = pagedOrientationHandler.getPrimarySize(dismissedTaskView) + pageSpacing
                     val sign = if (reflowFromLeft) 1f else -1f
                     // Positions are physical (x/y), so the sign needs no RTL flip.
