@@ -20,6 +20,8 @@ import static android.app.ActivityTaskManager.INVALID_TASK_ID;
 import static android.app.WindowConfiguration.WINDOWING_MODE_FULLSCREEN;
 import static android.os.Trace.traceBegin;
 import static android.os.Trace.traceEnd;
+import static android.view.Surface.ROTATION_0;
+import static android.view.Surface.ROTATION_180;
 import static android.view.View.MeasureSpec.EXACTLY;
 import static android.view.View.MeasureSpec.makeMeasureSpec;
 
@@ -84,7 +86,6 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.LocusId;
-import android.content.pm.LauncherApps;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -147,7 +148,6 @@ import com.android.launcher3.Insettable;
 import com.android.launcher3.LauncherPrefs;
 import com.android.launcher3.MotionEventsUtils;
 import com.android.launcher3.PagedView;
-import com.android.launcher3.LauncherPrefs;
 import com.android.launcher3.R;
 import com.android.launcher3.Utilities;
 import com.android.launcher3.anim.AnimatedFloat;
@@ -535,6 +535,7 @@ public abstract class RecentsView<
     protected boolean mEnableDrawingLiveTile = false;
     protected final Rect mTempRect = new Rect();
     protected final RectF mTempRectF = new RectF();
+    private final Rect mTempTaskBoundsRect = new Rect();
     private final PointF mTempPointF = new PointF();
     private final Matrix mTempMatrix = new Matrix();
     private final Matrix mAnimMatrix = new Matrix();
@@ -1195,6 +1196,8 @@ public abstract class RecentsView<
             LauncherPrefs.getPrefs(getContext())
                     .unregisterOnSharedPreferenceChangeListener(mPrefListener);
         }
+        mTaskLaunchListener = null;
+        mOnTaskLaunchCancelledRunnable = null;
         reset();
     }
 
@@ -1361,15 +1364,18 @@ public abstract class RecentsView<
             ValueAnimator appAnimator = ValueAnimator.ofFloat(0, 1);
             appAnimator.setDuration(RECENTS_LAUNCH_DURATION);
             appAnimator.setInterpolator(ACCELERATE_DECELERATE);
+            final int displayWidth = mContainer.getDeviceProfile().getDeviceProperties().getWidthPx();
+            final int displayHeight =
+                    mContainer.getDeviceProfile().getDeviceProperties().getHeightPx();
             appAnimator.addUpdateListener(valueAnimator -> {
                 float percent = valueAnimator.getAnimatedFraction();
                 SurfaceTransaction transaction = new SurfaceTransaction();
                 for (int i = apps.length - 1; i >= 0; --i) {
                     RemoteAnimationTarget app = apps[i];
 
-                    float dx = mContainer.getDeviceProfile().getDeviceProperties().getWidthPx() * (1 - percent) / 2
+                    float dx = displayWidth * (1 - percent) / 2
                             + app.screenSpaceBounds.left * percent;
-                    float dy = mContainer.getDeviceProfile().getDeviceProperties().getHeightPx() * (1 - percent) / 2
+                    float dy = displayHeight * (1 - percent) / 2
                             + app.screenSpaceBounds.top * percent;
                     mAnimMatrix.reset();
                     mAnimMatrix.setScale(percent, percent);
@@ -2190,6 +2196,10 @@ public abstract class RecentsView<
             mMemInfoView.setAlpha(MemInfoView.ALPHA_FS_PROGRESS,
                     mapToRange(fullscreenProgress, 0, 0.1f, 1f, 0f, LINEAR));
         }
+
+        if (mEnableOverlap) {
+            updatePageOffsets();
+        }
     }
 
     private void updateTaskStackListenerState() {
@@ -2370,16 +2380,19 @@ public abstract class RecentsView<
     }
 
     protected Rect getTaskBounds(TaskView taskView) {
+        getTaskBounds(taskView, mTempTaskBoundsRect);
+        return mTempTaskBoundsRect;
+    }
+
+    protected void getTaskBounds(TaskView taskView, Rect outRect) {
         int selectedPage = indexOfChild(taskView);
         int primaryScroll = getPagedOrientationHandler().getPrimaryScroll(this);
         int selectedPageScroll = getScrollForPage(selectedPage);
         boolean isTopRow = mTopRowIdSet.contains(taskView.getTaskViewId());
-        Rect outRect = new Rect(
-                taskView.isGridTask() ? mLastComputedGridTaskSize : mLastComputedTaskSize);
+        outRect.set(taskView.isGridTask() ? mLastComputedGridTaskSize : mLastComputedTaskSize);
         outRect.offset(
                 -(primaryScroll - (selectedPageScroll + getOffsetFromScrollPosition(selectedPage))),
                 (int) (showAsGrid() && !isTopRow ? mTopBottomRowHeightDiff : 0));
-        return outRect;
     }
 
     /** Gets the last computed task size */
@@ -3453,680 +3466,6 @@ public abstract class RecentsView<
     }
 
     /**
-     * Creates a {@link PendingAnimation} for dismissing the specified {@link TaskView}.
-     *
-     * @param dismissedTaskView           the {@link TaskView} to be dismissed
-     * @param animateTaskView             whether the {@link TaskView} to be dismissed should be
-     *                                    animated
-     * @param shouldRemoveTask            whether the associated {@link Task} should be removed from
-     *                                    ActivityManager after dismissal
-     * @param duration                    duration of the animation
-     * @param dismissingForSplitSelection task dismiss animation is used for entering split
-     *                                    selection state from app icon
-     * @param gridEndData                 used to compute any gap left between the end of the
-     *                                    grid and the clear all button.
-     */
-    public void createTaskDismissAnimation(PendingAnimation anim,
-            @Nullable TaskView dismissedTaskView,
-            boolean animateTaskView, boolean shouldRemoveTask, long duration,
-            boolean dismissingForSplitSelection,
-            @Nullable RecentsDismissUtils.GridEndData gridEndData) {
-        if (mPendingAnimation != null) {
-            mPendingAnimation.createPlaybackController().dispatchOnCancel().dispatchOnEnd();
-        }
-
-        int count = getPageCount();
-        if (count == 0) {
-            return;
-        }
-
-        boolean showAsGrid = showAsGrid();
-        int taskCount = getTaskViewCount();
-        int dismissedIndex = indexOfChild(dismissedTaskView);
-        int dismissedTaskViewId =
-                dismissedTaskView != null ? dismissedTaskView.getTaskViewId() : INVALID_TASK_ID;
-
-        // Grid specific properties.
-        boolean isFocusedTaskDismissed = false;
-        boolean isStagingFocusedTask = false;
-        boolean isSlidingTasks;
-        TaskView nextFocusedTaskView = null;
-        boolean nextFocusedTaskFromTop = false;
-        float dismissedTaskWidth = 0;
-        float nextFocusedTaskWidth = 0;
-
-        int[] oldScroll = new int[count];
-        int[] newScroll = new int[count];
-        int scrollDiffPerPage = 0;
-        // Non-grid specific properties.
-        boolean needsCurveUpdates = false;
-        boolean areAllDesktopTasksDismissed = false;
-
-        if (showAsGrid) {
-            if (dismissedTaskView != null) {
-                dismissedTaskWidth = dismissedTaskView.getLayoutParams().width + mPageSpacing;
-            }
-            isFocusedTaskDismissed = dismissedTaskViewId != INVALID_TASK_ID
-                    && dismissedTaskViewId == mFocusedTaskViewId;
-            if (dismissingForSplitSelection && getTaskViewAt(
-                    mCurrentPage) instanceof DesktopTaskView) {
-                areAllDesktopTasksDismissed = true;
-            }
-            if (isFocusedTaskDismissed) {
-                if (isSplitSelectionActive()) {
-                    isStagingFocusedTask = true;
-                } else {
-                    nextFocusedTaskFromTop =
-                            !mTopRowIdSet.isEmpty() && mTopRowIdSet.size() >= (taskCount - 1) / 2f;
-                    // Pick the next focused task from the preferred row.
-                    for (TaskView taskView : getTaskViews()) {
-                        if (taskView == dismissedTaskView || taskView.isLargeTile()) {
-                            continue;
-                        }
-                        boolean isTopRow = mTopRowIdSet.contains(taskView.getTaskViewId());
-                        if ((nextFocusedTaskFromTop && isTopRow
-                                || (!nextFocusedTaskFromTop && !isTopRow))) {
-                            nextFocusedTaskView = taskView;
-                            break;
-                        }
-                    }
-                    if (nextFocusedTaskView != null) {
-                        nextFocusedTaskWidth =
-                                nextFocusedTaskView.getLayoutParams().width + mPageSpacing;
-                    }
-                }
-            }
-        }
-
-        getPageScrolls(oldScroll, false, SIMPLE_SCROLL_LOGIC);
-        getPageScrolls(newScroll, false,
-                v -> v.getVisibility() != GONE && v != dismissedTaskView);
-        if (count > 1) {
-            scrollDiffPerPage = Math.abs(oldScroll[1] - oldScroll[0]);
-        }
-
-        isSlidingTasks = isStagingFocusedTask || areAllDesktopTasksDismissed;
-        float dismissTranslationInterpolationEnd = 1;
-        boolean closeGapBetweenClearAll = false;
-        boolean isClearAllHidden = isClearAllHidden();
-
-        if (gridEndData == null) {
-            gridEndData = mDismissUtils.getGridEndData(dismissedTaskView,
-                    false /* isExpressiveDismiss */, isFocusedTaskDismissed, nextFocusedTaskView,
-                    isStagingFocusedTask, nextFocusedTaskFromTop, nextFocusedTaskWidth);
-        }
-        float longGridRowWidthDiff = gridEndData.getGridEndOffset();
-        boolean snapToLastTask = gridEndData.getSnapToLastTask();
-        float newClearAllShortTotalWidthTranslation =
-                gridEndData.getNewClearAllShortTotalWidthTranslation();
-        boolean currentPageSnapsToEndOfGrid = gridEndData.getCurrentPageSnapsToEndOfGrid();
-        if (longGridRowWidthDiff != 0f) {
-            closeGapBetweenClearAll = true;
-        }
-
-        // After dismissal, animate translation of the remaining tasks to fill any gap left
-        // between the end of the grid and the clear all button. Only animate if the clear
-        // all button is visible or would become visible after dismissal.
-        if (longGridRowWidthDiff != 0) {
-            // If we need to animate the grid to compensate the clear all gap, we split the
-            // second half of the dismiss pending animation (in which the non-dismissed tasks
-            // slide into place) in half again, making the first quarter the existing
-            // non-dismissal sliding and the second quarter this new animation of gap filling.
-            // This is due to the fact that PendingAnimation is a single animation, not a
-            // sequence of animations, so we fake it using interpolation. Stagger the offsets of
-            // each additional task for a delayed animation. We use half here as this animation is
-            // half of half of an animation (1/4th).
-            float halfAdditionalDismissTranslationOffset =
-                    (0.5f * ADDITIONAL_DISMISS_TRANSLATION_INTERPOLATION_OFFSET);
-            dismissTranslationInterpolationEnd = Utilities.boundToRange(
-                    END_DISMISS_TRANSLATION_INTERPOLATION_OFFSET
-                            + (taskCount - 1) * halfAdditionalDismissTranslationOffset,
-                    END_DISMISS_TRANSLATION_INTERPOLATION_OFFSET, 1);
-            for (TaskView taskView : getTaskViews()) {
-                anim.setFloat(taskView, TaskView.GRID_END_TRANSLATION_X,
-                        longGridRowWidthDiff,
-                        clampToProgress(LINEAR, dismissTranslationInterpolationEnd, 1));
-                dismissTranslationInterpolationEnd = Utilities.boundToRange(
-                        dismissTranslationInterpolationEnd
-                                - halfAdditionalDismissTranslationOffset,
-                        END_DISMISS_TRANSLATION_INTERPOLATION_OFFSET, 1);
-                if (mEnableDrawingLiveTile && taskView.isRunningTask()) {
-                    anim.addOnFrameCallback(() -> {
-                        runActionOnRemoteHandles(remoteTargetHandle ->
-                                remoteTargetHandle.getTaskViewSimulator()
-                                        .taskPrimaryTranslation.value =
-                                        TaskView.GRID_END_TRANSLATION_X.get(taskView));
-                        redrawLiveTile();
-                    });
-                }
-            }
-
-            // Change alpha of clear all if translating grid to hide it
-            if (isClearAllHidden) {
-                anim.setFloat(mClearAllButton, DISMISS_ALPHA, 0, LINEAR);
-                anim.addListener(new AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationEnd(Animator animation) {
-                        super.onAnimationEnd(animation);
-                        mClearAllButton.setDismissAlpha(1);
-                    }
-                });
-            }
-        }
-
-        SplitAnimationTimings splitTimings =
-                AnimUtils.getDeviceOverviewToSplitTimings(mContainer.getDeviceProfile().getDeviceProperties().isTablet());
-
-        int distanceFromDismissedTask = 1;
-        int slidingTranslation = 0;
-        if (isSlidingTasks) {
-            int nextSnappedPage = indexOfChild(isStagingFocusedTask
-                    ? mUtils.getFirstSmallTaskView()
-                    : mUtils.getFirstNonDesktopTaskView());
-            slidingTranslation = getPagedOrientationHandler().getPrimaryScroll(this)
-                    - getScrollForPage(nextSnappedPage);
-            slidingTranslation += mIsRtl ? newClearAllShortTotalWidthTranslation
-                    : -newClearAllShortTotalWidthTranslation;
-        }
-        mTaskViewsDismissPrimaryTranslations.clear();
-        int lastTaskViewIndex = indexOfChild(mUtils.getLastTaskView());
-        for (int i = 0; i < count; i++) {
-            View child = getChildAt(i);
-            if (child == dismissedTaskView) {
-                if (animateTaskView && !dismissingForSplitSelection) {
-                    addDismissedTaskAnimations(dismissedTaskView, duration, anim);
-                }
-            } else if (!showAsGrid || (dismissedTaskView != null && dismissedTaskView.isLargeTile()
-                    && nextFocusedTaskView == null && !dismissingForSplitSelection)) {
-                int offset = getOffsetToDismissedTask(scrollDiffPerPage, dismissedIndex,
-                        lastTaskViewIndex);
-                int scrollDiff = newScroll[i] - oldScroll[i] + offset;
-                if (scrollDiff != 0) {
-                    int gapFillTranslation = getGapFillTranslationForDismiss(
-                            i, dismissedIndex, scrollDiffPerPage, scrollDiff, offset);
-                    translateTaskWhenDismissed(
-                            child,
-                            Math.abs(i - dismissedIndex),
-                            gapFillTranslation,
-                            anim,
-                            splitTimings);
-                    if (child instanceof TaskView taskView) {
-                        mTaskViewsDismissPrimaryTranslations.put(taskView, scrollDiffPerPage);
-                    }
-                    needsCurveUpdates = true;
-                }
-            } else if (child instanceof TaskView taskView) {
-                // Animate task with index >= dismissed index and in the same row as the
-                // dismissed index or next focused index. Offset successive task dismissal
-                // durations for a staggered effect.
-                int staggerColumn = isSlidingTasks
-                        ? (int) Math.ceil(distanceFromDismissedTask / 2f)
-                        : distanceFromDismissedTask;
-                // Set timings based on if user is initiating splitscreen on the focused task,
-                // or splitting/dismissing some other task.
-                final float animationStartProgress;
-                if (isSlidingTasks) {
-                    float slidingStartOffset = splitTimings.getGridSlideStartOffset()
-                            + (splitTimings.getGridSlideStaggerOffset() * staggerColumn);
-                    if (areAllDesktopTasksDismissed) {
-                        animationStartProgress = Utilities.boundToRange(
-                                slidingStartOffset
-                                        + splitTimings.getDesktopFadeSplitAnimationEndOffset(),
-                                0f,
-                                dismissTranslationInterpolationEnd);
-                    } else {
-                        animationStartProgress = Utilities.boundToRange(
-                                slidingStartOffset,
-                                0f,
-                                dismissTranslationInterpolationEnd);
-                    }
-                } else {
-                    animationStartProgress = Utilities.boundToRange(
-                            INITIAL_DISMISS_TRANSLATION_INTERPOLATION_OFFSET
-                                    + ADDITIONAL_DISMISS_TRANSLATION_INTERPOLATION_OFFSET
-                                    * staggerColumn, 0f, dismissTranslationInterpolationEnd);
-                }
-
-                final float animationEndProgress;
-                if (isSlidingTasks && taskView != nextFocusedTaskView) {
-                    animationEndProgress = Utilities.boundToRange(
-                            splitTimings.getGridSlideStartOffset()
-                                    + (splitTimings.getGridSlideStaggerOffset() * staggerColumn)
-                                    + splitTimings.getGridSlideDurationOffset(),
-                            0f,
-                            dismissTranslationInterpolationEnd);
-                } else {
-                    animationEndProgress = dismissTranslationInterpolationEnd;
-                }
-
-                Interpolator dismissInterpolator = isSlidingTasks ? EMPHASIZED : LINEAR;
-
-                float primaryTranslation = 0;
-                if (taskView == nextFocusedTaskView) {
-                    // Enlarge the task to be focused next, and translate into focus position.
-                    float scale = mTaskWidth / (float) mLastComputedGridTaskSize.width();
-                    anim.setFloat(taskView, TaskView.DISMISS_SCALE, scale,
-                            clampToProgress(LINEAR, animationStartProgress,
-                                    dismissTranslationInterpolationEnd));
-                    primaryTranslation += dismissedTaskWidth;
-                    float secondaryTranslation = -mTaskGridVerticalDiff;
-                    if (!nextFocusedTaskFromTop) {
-                        secondaryTranslation -= mTopBottomRowHeightDiff;
-                    }
-                    anim.setFloat(taskView, taskView.getSecondaryDismissTranslationProperty(),
-                            secondaryTranslation, clampToProgress(LINEAR, animationStartProgress,
-                                    dismissTranslationInterpolationEnd));
-                    anim.add(taskView.getDismissIconFadeOutAnimator(),
-                            clampToProgress(LINEAR, 0f, ANIMATION_DISMISS_PROGRESS_MIDPOINT));
-                } else if ((isFocusedTaskDismissed && nextFocusedTaskView != null && isSameGridRow(
-                        taskView, nextFocusedTaskView))
-                        || (!isFocusedTaskDismissed && i >= dismissedIndex && isSameGridRow(
-                        taskView, dismissedTaskView))) {
-                    primaryTranslation +=
-                            nextFocusedTaskView != null ? nextFocusedTaskWidth : dismissedTaskWidth;
-                }
-                if (!(taskView instanceof DesktopTaskView)) {
-                    primaryTranslation += mIsRtl ? slidingTranslation : -slidingTranslation;
-                }
-
-                if (primaryTranslation != 0) {
-                    float finalTranslation = mIsRtl ? primaryTranslation : -primaryTranslation;
-                    float startTranslation = 0;
-                    if (!(taskView instanceof DesktopTaskView) && slidingTranslation != 0) {
-                        startTranslation = isTaskViewVisible(taskView) ? 0
-                                : finalTranslation + (mIsRtl ? -mLastComputedTaskSize.right
-                                        : mLastComputedTaskSize.right);
-                    }
-                    Animator dismissAnimator = ObjectAnimator.ofFloat(taskView,
-                            taskView.getPrimaryDismissTranslationProperty(),
-                            startTranslation, finalTranslation);
-                    dismissAnimator.setInterpolator(
-                            clampToProgress(dismissInterpolator, animationStartProgress,
-                                    animationEndProgress));
-                    anim.add(dismissAnimator);
-                    mTaskViewsDismissPrimaryTranslations.put(taskView, (int) finalTranslation);
-                    distanceFromDismissedTask++;
-                }
-            }
-        }
-        if (dismissingForSplitSelection) {
-            createInitialSplitSelectAnimation(anim);
-        }
-
-        if (needsCurveUpdates) {
-            anim.addOnFrameCallback(this::updateCurveProperties);
-        }
-
-        // Add a tiny bit of translation Z, so that it draws on top of other views. This is relevant
-        // (e.g.) when we dismiss a task by sliding it upward: if there is a row of icons above, we
-        // want the dragged task to stay above all other views.
-        if (animateTaskView && dismissedTaskView != null) {
-            dismissedTaskView.setTranslationZ(0.1f);
-        }
-        loadVisibleTaskData(TaskView.FLAG_UPDATE_ALL);
-        if (!dismissingForSplitSelection) {
-            anim.addStartListener(() -> InteractionJankMonitorWrapper.begin(this,
-                    Cuj.CUJ_LAUNCHER_OVERVIEW_TASK_DISMISS));
-        }
-        mPendingAnimation = anim;
-        final TaskView finalNextFocusedTaskView = nextFocusedTaskView;
-        final boolean finalCloseGapBetweenClearAll = closeGapBetweenClearAll;
-        final boolean finalSnapToLastTask = snapToLastTask;
-        final boolean finalIsFocusedTaskDismissed = isFocusedTaskDismissed;
-        mPendingAnimation.addEndListener(new Consumer<>() {
-            @Override
-            public void accept(Boolean success) {
-                if (mEnableDrawingLiveTile && dismissedTaskView != null
-                        && dismissedTaskView.isRunningTask() && success) {
-                    finishRecentsAnimation(true /* toHome */, false /* shouldPip */,
-                            () -> onEnd(true));
-                } else {
-                    onEnd(success);
-                }
-            }
-
-            @SuppressWarnings("WrongCall")
-            private void onEnd(boolean success) {
-                // Overlap recents styles keep taskOffset translations through dismiss; resetting
-                // before removeViewInLayout clears them and causes a visible snap. Reset after
-                // layout catches up (below). Stock layout resets immediately as in AOSP.
-                if (!mEnableOverlap || !success) {
-                    resetTaskVisuals();
-                }
-
-                if (success) {
-                    mAnyTaskHasBeenDismissed = true;
-                    // Caches the [groupTask] before removing it. As the [deskId] might become
-                    // invalid by [removeViewInLayout] on the [dismissedTaskView] below. It might
-                    // happen before [removeGroupTaskInternal] that runs on a helper thread.
-                    final GroupTask groupTask;
-                    if (shouldRemoveTask && dismissedTaskView != null
-                            && (groupTask = dismissedTaskView.getGroupTask()) != null) {
-                        if (dismissedTaskView.isRunningTask()) {
-                            finishRecentsAnimation(true /* toHome */, false /* shouldPip */,
-                                    () -> removeGroupTaskInternal(groupTask));
-                        } else {
-                            removeGroupTaskInternal(groupTask);
-                        }
-                        mContainer.getStatsLogManager().logger()
-                                .withItemInfo(dismissedTaskView.getItemInfo())
-                                .log(LAUNCHER_TASK_DISMISS_SWIPE_UP);
-                    }
-
-                    int pageToSnapTo = mCurrentPage;
-                    mCurrentPageScrollDiff = 0;
-                    int taskViewIdToSnapTo = -1;
-                    if (showAsGrid) {
-                        if (finalCloseGapBetweenClearAll) {
-                            if (finalSnapToLastTask) {
-                                // Last task will be determined after removing dismissed task.
-                                pageToSnapTo = -1;
-                            } else if (taskCount > 2) {
-                                pageToSnapTo = indexOfChild(mClearAllButton);
-                            } else if (isClearAllHidden) {
-                                // Snap to focused task if clear all is hidden.
-                                pageToSnapTo = getFirstTaskViewIndex();
-                            }
-                        } else {
-                            // Get the id of the task view we will snap to based on the current
-                            // page's relative position as the order of indices change over time due
-                            // to dismissals.
-                            TaskView snappedTaskView = getTaskViewAt(mCurrentPage);
-                            boolean calculateScrollDiff = true;
-                            if (snappedTaskView != null && !finalSnapToLastTask) {
-                                if (snappedTaskView.getTaskViewId() == mFocusedTaskViewId) {
-                                    if (finalNextFocusedTaskView != null) {
-                                        taskViewIdToSnapTo =
-                                                finalNextFocusedTaskView.getTaskViewId();
-                                    } else if (dismissedTaskViewId != mFocusedTaskViewId) {
-                                        taskViewIdToSnapTo = mFocusedTaskViewId;
-                                    } else {
-                                        // Won't focus next task in split select, so snap to the
-                                        // first task.
-                                        pageToSnapTo = getFirstTaskViewIndex();
-                                        calculateScrollDiff = false;
-                                    }
-                                } else {
-                                    int snappedTaskViewId = snappedTaskView.getTaskViewId();
-                                    boolean isSnappedTaskInTopRow = mTopRowIdSet.contains(
-                                            snappedTaskViewId);
-                                    IntArray taskViewIdArray =
-                                            isSnappedTaskInTopRow ? mUtils.getTopRowIdArray()
-                                                    : mUtils.getBottomRowIdArray();
-                                    int snappedIndex = taskViewIdArray.indexOf(snappedTaskViewId);
-                                    taskViewIdArray.removeValue(dismissedTaskViewId);
-                                    if (finalNextFocusedTaskView != null) {
-                                        taskViewIdArray.removeValue(
-                                                finalNextFocusedTaskView.getTaskViewId());
-                                    }
-                                    if (snappedIndex >= 0
-                                            && snappedIndex < taskViewIdArray.size()) {
-                                        taskViewIdToSnapTo = taskViewIdArray.get(snappedIndex);
-                                    } else if (snappedIndex == taskViewIdArray.size()) {
-                                        // If the snapped task is the last item from the
-                                        // dismissed row,
-                                        // snap to the same column in the other grid row
-                                        IntArray inverseRowTaskViewIdArray =
-                                                isSnappedTaskInTopRow ? mUtils.getBottomRowIdArray()
-                                                        : mUtils.getTopRowIdArray();
-                                        if (snappedIndex < inverseRowTaskViewIdArray.size()) {
-                                            taskViewIdToSnapTo = inverseRowTaskViewIdArray.get(
-                                                    snappedIndex);
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (calculateScrollDiff) {
-                                int primaryScroll = getPagedOrientationHandler().getPrimaryScroll(
-                                        RecentsView.this);
-                                int currentPageScroll = getScrollForPage(mCurrentPage);
-                                mCurrentPageScrollDiff = primaryScroll - currentPageScroll;
-                            }
-                        }
-                    } else if (dismissedIndex < pageToSnapTo || pageToSnapTo == lastTaskViewIndex) {
-                        pageToSnapTo--;
-                    }
-                    boolean isHomeTaskDismissed = dismissedTaskView == getHomeTaskView();
-                    removeViewInLayout(dismissedTaskView);
-                    mTopRowIdSet.remove(dismissedTaskViewId);
-
-                    if (taskCount == 1) {
-                        if (mEnableOverlap) {
-                            updateScrollSynchronously();
-                            resetTaskVisuals();
-                        }
-                        if (!isSplitSelectionActive()) {
-                            removeViewInLayout(mClearAllButton);
-                            removeViewInLayout(mAddDesktopButton);
-                            if (isHomeTaskDismissed) {
-                                updateEmptyMessage();
-                            } else {
-                                startHome();
-                            }
-                        }
-                    } else {
-                        // Update focus task and its size.
-                        if (finalIsFocusedTaskDismissed && finalNextFocusedTaskView != null) {
-                            setFocusedTaskViewId(enableGridOnlyOverview()
-                                    ? INVALID_TASK_ID
-                                    : finalNextFocusedTaskView.getTaskViewId());
-                            mTopRowIdSet.remove(mFocusedTaskViewId);
-                            finalNextFocusedTaskView.getDismissIconFadeInAnimator().start();
-                        }
-                        updateTaskSize();
-                        mUtils.updateChildTaskOrientations();
-                        // Update scroll and snap to page.
-                        updateScrollSynchronously();
-
-                        if (mEnableOverlap) {
-                            resetTaskVisuals();
-                        }
-
-                        if (showAsGrid) {
-                            // Rebalance tasks in the grid
-                            TaskView highestVisibleTaskView = getHighestVisibleTaskView();
-                            if (highestVisibleTaskView != null) {
-                                boolean shouldRebalance;
-                                int screenStart = getPagedOrientationHandler().getPrimaryScroll(
-                                        RecentsView.this);
-                                int taskStart = getPagedOrientationHandler().getChildStart(
-                                        highestVisibleTaskView)
-                                        + (int) highestVisibleTaskView.getOffsetAdjustment(
-                                                /*gridEnabled=*/true);
-
-                                // Rebalance only if there is a maximum gap between the task and the
-                                // screen's edge; this ensures that rebalanced tasks are outside the
-                                // visible screen.
-                                if (mIsRtl) {
-                                    shouldRebalance = taskStart <= screenStart + mPageSpacing;
-                                } else {
-                                    int screenEnd = screenStart
-                                            + getPagedOrientationHandler().getMeasuredSize(
-                                            RecentsView.this);
-                                    int taskSize = (int) (
-                                            getPagedOrientationHandler().getMeasuredSize(
-                                                    highestVisibleTaskView) * highestVisibleTaskView
-                                                    .getSizeAdjustment(/*fullscreenEnabled=*/
-                                                            false));
-                                    int taskEnd = taskStart + taskSize;
-
-                                    shouldRebalance = taskEnd >= screenEnd - mPageSpacing;
-                                }
-
-                                if (shouldRebalance) {
-                                    updateGridProperties(highestVisibleTaskView);
-                                    updateScrollSynchronously();
-                                }
-                            }
-
-                            IntArray topRowIdArray = mUtils.getTopRowIdArray();
-                            IntArray bottomRowIdArray = mUtils.getBottomRowIdArray();
-                            if (finalSnapToLastTask) {
-                                // If snapping to last task, find the last task after dismissal.
-                                pageToSnapTo = indexOfChild(
-                                        getLastGridTaskView(topRowIdArray, bottomRowIdArray));
-
-                                if (pageToSnapTo == INVALID_PAGE) {
-                                    // Snap to latest large tile page after dismissing the
-                                    // last grid task. This will prevent snapping to page 0 when
-                                    // desktop task is visible as large tile.
-                                    pageToSnapTo = indexOfChild(mUtils.getLastLargeTaskView());
-                                }
-                            } else if (taskViewIdToSnapTo != -1) {
-                                // If snapping to another page due to indices rearranging, find
-                                // the new index after dismissal & rearrange using the task view id.
-                                pageToSnapTo = indexOfChild(
-                                        getTaskViewFromTaskViewId(taskViewIdToSnapTo));
-                                if (!currentPageSnapsToEndOfGrid) {
-                                    // If it wasn't snapped to one of the last pages, but is now
-                                    // snapped to last pages, we'll need to compensate for the
-                                    // offset from the page's scroll to its visual position.
-                                    mCurrentPageScrollDiff += getOffsetFromScrollPosition(
-                                            pageToSnapTo, topRowIdArray, bottomRowIdArray);
-                                }
-                            }
-                        }
-                        pageBeginTransition();
-                        setCurrentPage(pageToSnapTo);
-                        // Update various scroll-dependent UI.
-                        dispatchScrollChanged();
-                        updateActionsViewFocusedScroll();
-                        if (!mContainer.getDeviceProfile().getDeviceProperties().isTablet()) {
-                            mActionsView.updateDisabledFlags(OverviewActionsView.DISABLED_SCROLLING,
-                                    false);
-                        }
-                    }
-                }
-                updateCurrentTaskActionsVisibility();
-                onDismissAnimationEnds();
-                mPendingAnimation = null;
-                mTaskViewsDismissPrimaryTranslations.clear();
-
-                if (!dismissingForSplitSelection && success) {
-                    InteractionJankMonitorWrapper.end(Cuj.CUJ_LAUNCHER_OVERVIEW_TASK_DISMISS);
-                } else if (!dismissingForSplitSelection) {
-                    InteractionJankMonitorWrapper.cancel(Cuj.CUJ_LAUNCHER_OVERVIEW_TASK_DISMISS);
-                }
-            }
-        });
-    }
-
-    /**
-     * Target for {@link TaskView#getPrimaryDismissTranslationProperty()} while a task is
-     * dismissed. Overlap styles (Kami/iOS/Oxygen) use page-slot spacing because page-scroll
-     * deltas from {@link #getPageScrolls} do not match the stack's visual overlap offsets.
-     */
-    private int getGapFillTranslationForDismiss(int childIndex, int dismissedIndex,
-            int scrollDiffPerPage, int scrollDiff, int dismissOffset) {
-        if (!mEnableOverlap) {
-            return scrollDiff;
-        }
-        int slotsFromDismissed = childIndex - dismissedIndex;
-        if (slotsFromDismissed <= 0) {
-            return 0;
-        }
-        int perSlot = mIsRtl ? scrollDiffPerPage : -scrollDiffPerPage;
-        int gapFillTranslation = perSlot * slotsFromDismissed;
-        if (slotsFromDismissed == 1) {
-            gapFillTranslation += dismissOffset - perSlot;
-        }
-        return gapFillTranslation;
-    }
-
-    /**
-     * Compute scroll offsets from task dismissal for animation.
-     * If we just take newScroll - oldScroll, everything to the right of dragged task
-     * translates to the left. We need to offset this in some cases:
-     * - In RTL, add page offset to all pages, since we want pages to move to the right
-     * Additionally, add a page offset if:
-     * - Current page is rightmost page (leftmost for RTL)
-     * - Dragging an adjacent page on the left side (right side for RTL)
-     */
-    private int getOffsetToDismissedTask(int scrollDiffPerPage, int dismissedIndex,
-            int lastTaskViewIndex) {
-        // If `mCurrentPage` is beyond `lastTaskViewIndex`, use the last TaskView instead to
-        // calculate offset.
-        int currentPage = Math.min(mCurrentPage, lastTaskViewIndex);
-        int offset = mIsRtl ? scrollDiffPerPage : 0;
-        if (currentPage == dismissedIndex) {
-            if (currentPage == lastTaskViewIndex) {
-                offset += mIsRtl ? -scrollDiffPerPage : scrollDiffPerPage;
-            }
-        } else {
-            // Dismissing an adjacent page.
-            int negativeAdjacent = currentPage - 1; // (Right in RTL, left in LTR)
-            if (dismissedIndex == negativeAdjacent) {
-                offset += mIsRtl ? -scrollDiffPerPage : scrollDiffPerPage;
-            }
-        }
-        return offset;
-    }
-
-    private void translateTaskWhenDismissed(
-            View view,
-            int indexDiff,
-            int scrollDiffPerPage,
-            PendingAnimation pendingAnimation,
-            SplitAnimationTimings splitTimings) {
-        // No need to translate the AddDesktopButton on dismissing a TaskView, which should be
-        // always at the right most position, even when dismissing the last TaskView.
-        if (view instanceof AddDesktopButton) {
-            return;
-        }
-        FloatProperty translationProperty = view instanceof TaskView
-                ? ((TaskView) view).getPrimaryDismissTranslationProperty()
-                : getPagedOrientationHandler().getPrimaryViewTranslate();
-
-        float additionalDismissDuration =
-                ADDITIONAL_DISMISS_TRANSLATION_INTERPOLATION_OFFSET * indexDiff;
-
-        // We are in non-grid layout.
-        // If dismissing for split select, use split timings.
-        // If not, use dismiss timings.
-        float animationStartProgress = isSplitSelectionActive()
-                ? Utilities.boundToRange(splitTimings.getGridSlideStartOffset(), 0f, 1f)
-                : Utilities.boundToRange(
-                        INITIAL_DISMISS_TRANSLATION_INTERPOLATION_OFFSET
-                                + additionalDismissDuration, 0f, 1f);
-
-        float animationEndProgress = isSplitSelectionActive()
-                ? Utilities.boundToRange(splitTimings.getGridSlideStartOffset()
-                + splitTimings.getGridSlideDurationOffset(), 0f, 1f)
-                : 1f;
-
-        if (view instanceof TaskView taskView && isStackRecentsStyleActive()) {
-            scrollDiffPerPage = Math.round(getStackDismissReflowTarget(taskView, scrollDiffPerPage));
-        }
-
-        // Slide tiles in horizontally to fill dismissed area
-        pendingAnimation.setFloat(
-                view,
-                translationProperty,
-                scrollDiffPerPage,
-                clampToProgress(
-                        splitTimings.getGridSlidePrimaryInterpolator(),
-                        animationStartProgress,
-                        animationEndProgress
-                )
-        );
-        if (mEnableDrawingLiveTile && view instanceof TaskView
-                && ((TaskView) view).isRunningTask()) {
-            pendingAnimation.addOnFrameCallback(() -> {
-                runActionOnRemoteHandles(
-                        remoteTargetHandle ->
-                                remoteTargetHandle.getTaskViewSimulator()
-                                        .taskPrimaryTranslation.value =
-                                        getPagedOrientationHandler().getPrimaryValue(
-                                                view.getTranslationX(),
-                                                view.getTranslationY()
-                                        ));
-                redrawLiveTile();
-            });
-        }
-    }
-
-    /**
      * Hides all overview actions if user is halfway through split selection, shows otherwise.
      * We only show split option if device is large screen.
      */
@@ -4619,6 +3958,7 @@ public abstract class RecentsView<
                         .setScroll(getScrollOffset()));
         setImportantForAccessibility(isModal() ? IMPORTANT_FOR_ACCESSIBILITY_NO
                 : IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        recalculateTaskViewScreenEdgeIntersections();
     }
 
     private void updatePivots() {
@@ -4747,12 +4087,6 @@ public abstract class RecentsView<
                                 .taskPrimaryTranslation.value = totalTranslationX);
                 redrawLiveTile();
             }
-            if (mEnableDrawingLiveTile && i == getRunningTaskIndex() && !mEnableOverlap) {
-                runActionOnRemoteHandles(
-                        remoteTargetHandle -> remoteTargetHandle.getTaskViewSimulator()
-                                .taskPrimaryTranslation.value = totalTranslationX);
-                redrawLiveTile();
-            }
 
             if (showAsGrid && child instanceof TaskView taskView) {
                 float totalTranslationY = getVerticalOffsetSize(taskView, modalOffset);
@@ -4775,9 +4109,9 @@ public abstract class RecentsView<
     }
 
     public boolean isStackRecentsStyleActive() {
-        return mRecentsStyle.equals("staple")
+        return !showAsGrid() && (mRecentsStyle.equals("staple")
                 || mRecentsStyle.equals("ios")
-                || mRecentsStyle.equals("oxygen");
+                || mRecentsStyle.equals("oxygen"));
     }
 
     public float getStackDismissReflowTarget(TaskView taskView, float reflowTarget) {
@@ -4977,7 +4311,8 @@ public abstract class RecentsView<
         }
 
         // First, get the position of the task relative to the top row.
-        Rect taskPosition = getTaskBounds(taskView);
+        getTaskBounds(taskView, mTempTaskBoundsRect);
+        Rect taskPosition = mTempTaskBoundsRect;
 
         boolean isSelectedTaskTopRow = mTopRowIdSet.contains(getSelectedTaskView().getTaskViewId());
         boolean isChildTopRow = mTopRowIdSet.contains(taskView.getTaskViewId());
@@ -6862,7 +6197,7 @@ public abstract class RecentsView<
     }
 
     public float getScrollScale(RemoteTargetHandle rth) {
-        if (rth == null || showAsGrid() || mContainer.getDeviceProfile().isTablet) return 1f;
+        if (rth == null || showAsGrid() || mContainer.getDeviceProfile().getDeviceProperties().isTablet()) return 1f;
         if (!isPageScrollsInitialized()) return 1f;
         int childCount = Math.min(mPageScrolls.length, getChildCount());
         for (int i = 0; i < childCount; i++) {
