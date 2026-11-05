@@ -34,6 +34,8 @@ import androidx.annotation.WorkerThread;
 import com.android.launcher3.BaseActivity;
 import com.android.launcher3.DeviceProfile;
 import com.android.launcher3.R;
+import com.android.launcher3.LauncherPrefChangeListener;
+import com.android.launcher3.LauncherPrefs;
 import com.android.launcher3.display.DisplayController;
 import com.android.launcher3.display.LauncherDisplayInfo;
 import com.android.launcher3.util.ContextTracker;
@@ -43,7 +45,8 @@ import com.android.launcher3.util.SafeCloseable;
 /**
  * Utility class to manage launcher rotation
  */
-public class RotationHelper implements DeviceProfile.OnDeviceProfileChangeListener {
+public class RotationHelper implements DeviceProfile.OnDeviceProfileChangeListener,
+        LauncherPrefChangeListener {
 
     public static final int REQUEST_NONE = 0;
     public static final int REQUEST_ROTATE = 1;
@@ -59,7 +62,7 @@ public class RotationHelper implements DeviceProfile.OnDeviceProfileChangeListen
 
     private boolean mIgnoreAutoRotateSettings;
     private boolean mForceAllowRotationForTesting;
-    private final boolean mForceAllowRotation;
+    private boolean mHomeRotationEnabled;
 
     /**
      * Rotation request made by
@@ -87,13 +90,13 @@ public class RotationHelper implements DeviceProfile.OnDeviceProfileChangeListen
         mActivity = activity;
         mRequestOrientationHandler =
                 new Handler(UI_HELPER_EXECUTOR.getLooper(), this::setOrientationAsync);
-        mForceAllowRotation = activity.getResources().getBoolean(R.bool.config_allowRotation);
+
     }
 
     private void setIgnoreAutoRotateSettings(boolean ignoreAutoRotateSettings) {
         if (mDestroyed) return;
         // On large devices we do not handle auto-rotate differently.
-        mIgnoreAutoRotateSettings = ignoreAutoRotateSettings || mForceAllowRotation;
+        mIgnoreAutoRotateSettings = ignoreAutoRotateSettings;
     }
 
     /**
@@ -117,6 +120,13 @@ public class RotationHelper implements DeviceProfile.OnDeviceProfileChangeListen
             setIgnoreAutoRotateSettings(ignoreAutoRotateSettings);
             notifyChange();
         }
+    }
+
+    @Override
+    public void onPrefChanged(String key) {
+        if (mDestroyed || !LauncherPrefs.ALLOW_ROTATION.getSharedPrefKey().equals(key)) return;
+        mHomeRotationEnabled = LauncherPrefs.ALLOW_ROTATION.get(mActivity);
+        notifyChange();
     }
 
     public void setStateHandlerRequest(int request) {
@@ -172,6 +182,8 @@ public class RotationHelper implements DeviceProfile.OnDeviceProfileChangeListen
                                 return null;
                             });
         }
+        mHomeRotationEnabled = LauncherPrefs.ALLOW_ROTATION.get(mActivity);
+        LauncherPrefs.get(mActivity).addListener(this, LauncherPrefs.ALLOW_ROTATION);
         mActivity.addOnDeviceProfileChangeListener(this);
         notifyChange();
     }
@@ -179,6 +191,7 @@ public class RotationHelper implements DeviceProfile.OnDeviceProfileChangeListen
     public void destroy() {
         if (mDestroyed) return;
         mDestroyed = true;
+        LauncherPrefs.get(mActivity).removeListener(this, LauncherPrefs.ALLOW_ROTATION);
         mActivity.removeOnDeviceProfileChangeListener(this);
         if (mDisplayInfoChangesSafeCloseable != null) {
             mDisplayInfoChangesSafeCloseable.close();
@@ -203,6 +216,7 @@ public class RotationHelper implements DeviceProfile.OnDeviceProfileChangeListen
         } else if (mCurrentStateRequest == REQUEST_LOCK) {
             activityFlags = SCREEN_ORIENTATION_LOCKED;
         } else if (mIgnoreAutoRotateSettings
+                || mHomeRotationEnabled
                 || mCurrentStateRequest == REQUEST_ROTATE
                 || mForceAllowRotationForTesting
         ) {

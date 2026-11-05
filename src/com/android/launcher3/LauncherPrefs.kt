@@ -294,6 +294,11 @@ constructor(@ApplicationContext private val encryptedContext: Context) {
             backedUpItem("pref_allapps_icon_customization", Boolean::class.java) {
                 ALLAPPS_THEMED_ICONS.get(it)
             }
+        @JvmField
+        val ALLOW_ROTATION =
+            backedUpItem("pref_allowRotation", Boolean::class.java) {
+                it.resources.getBoolean(R.bool.config_allowRotation)
+            }
         @JvmField val ALLOW_WALLPAPER_ZOOMING = backedUpItem("pref_allow_wallpaper_zooming", true)
         @JvmField val APP_DRAWER_CUSTOM_COLOR_ENABLED = backedUpItem("pref_app_drawer_custom_color_enabled", false)
         @JvmField val APP_DRAWER_CUSTOM_COLOR_LIGHT = backedUpItem("pref_app_drawer_custom_color_light", -1) // #FFFFFFFF
