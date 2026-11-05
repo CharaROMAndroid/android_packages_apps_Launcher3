@@ -52,6 +52,7 @@ import com.android.launcher3.Utilities;
 import com.android.launcher3.accessibility.LauncherAccessibilityDelegate;
 import com.android.launcher3.allapps.PrivateProfileManager;
 import com.android.launcher3.customization.IconPickerBottomSheet;
+import com.android.launcher3.customization.InfoBottomSheet;
 import com.android.launcher3.dagger.LauncherComponentProvider;
 import com.android.launcher3.homescreenfiles.HomeScreenFilesRenameDialogViewModel;
 import com.android.launcher3.icons.pack.IconPackManager;
@@ -263,6 +264,22 @@ public abstract class SystemShortcut<T extends ActivityContext> extends ItemInfo
 
         @Override
         public void onClick(View view) {
+            // Shade-style info sheet on the home screen; recents, taskbar and non-app items keep
+            // opening the system app info screen directly.
+            if (!(mTarget instanceof BaseActivity)
+                    || !InfoBottomSheet.canShowFor(mTarget, mItemInfo)) {
+                openSystemAppInfo(view);
+                return;
+            }
+            if (InfoBottomSheet.tryShow(mTarget, mItemInfo, view)) {
+                mTarget.getStatsLogManager().logger().withItemInfo(mItemInfo)
+                        .log(LAUNCHER_SYSTEM_SHORTCUT_APP_INFO_TAP);
+                return;
+            }
+            openSystemAppInfo(view);
+        }
+
+        private void openSystemAppInfo(View view) {
             Rect sourceBounds = Utilities.getViewBounds(view);
             ActivityOptionsWrapper options = mTarget.getActivityLaunchOptions(view, mItemInfo);
             // Dismiss the taskMenu when the app launch animation is complete

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.android.launcher3.customization.InfoBottomSheet
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:theme="?attr/widgetsTheme">
+
+    <LinearLayout
+        android:id="@+id/app_info_content"
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <View
+            android:id="@+id/bottom_sheet_handle"
+            android:layout_width="@dimen/bottom_sheet_handle_width"
+            android:layout_height="@dimen/bottom_sheet_handle_height"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="@dimen/bottom_sheet_handle_margin"
+            android:layout_marginBottom="@dimen/bottom_sheet_handle_margin"
+            android:importantForAccessibility="no"
+            android:background="@drawable/bg_rounded_corner_bottom_sheet_handle" />
+
+        <TextView
+            android:id="@+id/app_info_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textAppearance="?android:attr/textAppearanceLarge" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:overScrollMode="never"
+            android:paddingBottom="24dp"
+            android:clipToPadding="false">
+
+            <LinearLayout
+                android:id="@+id/app_info_rows"
+                android:orientation="vertical"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:id="@+id/app_info_pack_list"
+                    android:orientation="vertical"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone" />
+                <include android:id="@+id/app_info_version" layout="@layout/app_info_row" />
+                <include android:id="@+id/app_info_last_update" layout="@layout/app_info_row" />
+                <include android:id="@+id/app_info_source" layout="@layout/app_info_row" />
+                <include android:id="@+id/app_info_custom_icon" layout="@layout/app_info_row" />
+                <include android:id="@+id/app_info_icon_pack" layout="@layout/app_info_row" />
+                <include android:id="@+id/app_info_more" layout="@layout/app_info_row" />
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
+</com.android.launcher3.customization.InfoBottomSheet>

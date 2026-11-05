@@ -38,6 +38,7 @@ import com.android.launcher3.R
 import com.android.launcher3.SecondaryDropTarget
 import com.android.launcher3.Utilities
 import com.android.launcher3.accessibility.LauncherAccessibilityDelegate
+import com.android.launcher3.customization.InfoBottomSheet
 import com.android.launcher3.allapps.PrivateProfileManager
 import com.android.launcher3.homescreenfiles.HomeScreenFilesRenameDialogFactory
 import com.android.launcher3.homescreenfiles.HomeScreenFilesUtils
@@ -236,18 +237,22 @@ object UnusedShortcuts {
     // Handle action from tapping app info shortcut.
     private val handleAppInfo =
         { activityContext: ActivityContext, itemInfo: ItemInfo, view: View ->
-            val sourceBounds = Utilities.getViewBounds(view)
-            val options: ActivityOptionsWrapper =
-                activityContext.getActivityLaunchOptions(view, itemInfo)
+            // Home screen shows the info sheet; recents, taskbar, other profiles and non-app
+            // items fall through to the system app info screen below.
+            if (!InfoBottomSheet.tryShow(activityContext, itemInfo, view)) {
+                val sourceBounds = Utilities.getViewBounds(view)
+                val options: ActivityOptionsWrapper =
+                    activityContext.getActivityLaunchOptions(view, itemInfo)
 
-            // Dismiss the taskMenu when the app launch animation is complete
-            options.onEndCallback.add { dismissTaskMenuView(activityContext) }
-            PackageManagerHelper.startDetailsActivityForInfo(
-                view.context,
-                itemInfo,
-                sourceBounds,
-                options.toBundle(),
-            )
+                // Dismiss the taskMenu when the app launch animation is complete
+                options.onEndCallback.add { dismissTaskMenuView(activityContext) }
+                PackageManagerHelper.startDetailsActivityForInfo(
+                    view.context,
+                    itemInfo,
+                    sourceBounds,
+                    options.toBundle(),
+                )
+            }
         }
 
     // Popup data for app info shortcut.
