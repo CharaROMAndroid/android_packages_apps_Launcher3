@@ -49,9 +49,9 @@ import com.android.launcher3.util.Executors.ORDERED_BG_EXECUTOR
  *  - The screen reveals nothing until the device credential/biometric prompt succeeds, every time
  *    the activity is shown again after being stopped. No secure lock screen means no access
  *    (fail closed; the old Lineage code allowed it).
- *  - Hiding only affects the launcher UI. Protecting an app from being opened is delegated to the
- *    framework App Lock via the system-provided PendingIntent, so it also holds for recents,
- *    notifications and other launchers. The launcher never enforces auth on its own.
+ *  - Hiding only affects the launcher UI. Protection is delegated to the framework App
+ *    Lock via the system-provided PendingIntent; the launcher does not implement launch-local
+ *    auth. Behaviour in recents or other launchers is not independently tested here.
  *  - App Lock is only offered for apps in the launcher's own user.
  */
 class TrustAppsActivity : Activity() {

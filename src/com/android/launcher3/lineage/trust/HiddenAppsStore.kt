@@ -46,17 +46,20 @@ class HiddenAppsStore(
     }
 
     fun isHidden(packageName: String, userSerial: Long): Boolean = try {
-        prefs.getStringSet(KEY, emptySet())?.contains(key(packageName, userSerial)) == true
+        userSerial >= 0 && prefs.getStringSet(KEY, emptySet())?.contains(key(packageName, userSerial)) == true
     } catch (e: RuntimeException) {
         Log.w(TAG, "isHidden failed", e)
         false
     }
 
-    fun setHidden(packageName: String, user: UserHandle, hidden: Boolean) =
-        setHidden(packageName, serialOf(user), hidden)
+    fun setHidden(packageName: String, user: UserHandle, hidden: Boolean) {
+        val serial = try { serialOf(user) } catch (e: RuntimeException) { -1L }
+        setHidden(packageName, serial, hidden)
+    }
 
     @Synchronized
     fun setHidden(packageName: String, userSerial: Long, hidden: Boolean) {
+        if (userSerial < 0) return // unresolved user: never write under a bogus key
         val set = HashSet(prefs.getStringSet(KEY, emptySet()) ?: emptySet())
         val k = key(packageName, userSerial)
         val changed = if (hidden) set.add(k) else set.remove(k)
@@ -88,7 +91,7 @@ class HiddenAppsStore(
                 instance ?: run {
                     val app = context.applicationContext
                     HiddenAppsStore(app.getSharedPreferences(FILE, Context.MODE_PRIVATE)) {
-                        UserCache.getInstance(app).getSerialNumberForUser(it)
+                        UserCache.getInstance(app).userManagerState.getCachedInfoOrNull(it)?.iconInfo?.userSerial ?: -1L
                     }
                 }.also { instance = it }
             }
