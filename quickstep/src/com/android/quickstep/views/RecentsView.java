@@ -600,7 +600,7 @@ public abstract class RecentsView<
      */
     public boolean isOverlapEnabled() {
         return mEnableOverlap && !showAsGrid()
-                && !mContainer.getDeviceProfile().getDeviceProperties().isTablet();
+                && !mContainer.getDeviceProfile().getDeviceProperties().isLargeScreen();
     }
     protected final IntSet mTopRowIdSet = new IntSet();
     private int mClearAllShortTotalWidthTranslation = 0;
